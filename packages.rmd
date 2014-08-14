@@ -1,6 +1,6 @@
 Install primary GLMM-fitting packages (and a variety of extras):
 
-```{r}
+```{r pkg1,eval=FALSE}
 pkgs1 <- c("lme4","MCMCglmm","blme","ggplot2","gridExtra",
            "coda","aods3","plotMCMC","bbmle","pbkrtest",
            "plotrix","emdbook","Hmisc","reshape2","plyr",
@@ -10,17 +10,17 @@ pkgs1 <- c("lme4","MCMCglmm","blme","ggplot2","gridExtra",
            "pedigreemm","lsmeans","robustlmm","agridat",
            "AICcmodavg","benchmark","metafor","multcomp",
            "MuMIn","ordinal","SASmixed","texreg","stargazer",
-           "rockchalk")
+           "rockchalk","knitr","rmarkdown")
 install.packages(pkgs1,dependencies=TRUE)
 ## get INLA:
 source("http://www.math.ntnu.no/inla/givemeINLA.R")
 ```
 
-`grid`, `nlme`, `MASS` should not need to be (re)installed, as they come with a standard R installation.
+`grid`, `nlme`, `MASS` should not need to be (re)installed, as they come with a standard R installation.  `scapeMCMC` (recommended in a previous version) is obsolete.
 
 `coefplot2` and `glmmADMB` need to be gotten from off-CRAN repos:
 
-```{r}
+```{r offCRAN,eval=FALSE}
 install.packages("glmmADMB",
    repos=c("http://www.hafro.is/~arnima/repos", getOption("repos")))
 install.packages("coefplot2",
@@ -29,7 +29,7 @@ install.packages("coefplot2",
 May need to add `type="source"` to one or both of these.
 
 Recommended versions (higher is OK):
-```{r}
+```{r versions}
 ##      lme4  glmmADMB  MCMCglmm      blme  pbkrtest coefplot2      coda
 ##     1.1.7     0.7.7      2.18     1.0.2     0.3.8   0.1.3.2    0.16.1
 ##     aods3     bbmle
