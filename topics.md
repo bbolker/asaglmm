@@ -8,7 +8,7 @@ This is a **preliminary** list of topics that I would like to cover.
 * model definition
     * random effects: varied perspectives
 	* model specification: RE, grouping variables, crossed vs nested, etc.
-	* advanced model specification
+	* advanced model specification (flexLambda, group-specific variances, etc.)
 * avoiding mixed models
     * residual tests from unmixed
 	* fixed effects
