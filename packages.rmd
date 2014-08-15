@@ -1,16 +1,17 @@
 Install primary GLMM-fitting packages (and a variety of extras):
 
 ```{r pkg1,eval=FALSE}
-pkgs1 <- c("lme4","MCMCglmm","blme","ggplot2","gridExtra",
-           "coda","aods3","plotMCMC","bbmle","pbkrtest",
-           "plotrix","emdbook","Hmisc","reshape2","plyr",
-           "numDeriv","dplyr","R2admb","glmmML","spGLMM",
-           "R2jags","RLRsim","lmerTest","mlmRev","MEMSS",
-           "gamm4","afex","arm","cAIC4","HLMdiag","influence.ME",
-           "pedigreemm","lsmeans","robustlmm","agridat",
-           "AICcmodavg","benchmark","metafor","multcomp",
-           "MuMIn","ordinal","SASmixed","texreg","stargazer",
-           "rockchalk","knitr","rmarkdown")
+pkgs1 <- c("afex", "agridat", "AICcmodavg", "aods3",
+           "arm", "bbmle", "benchmark", 
+           "blme", "cAIC4", "car",
+           "coda", "dplyr", "effects", "emdbook", "gamm4", 
+           "ggplot2", "glmmML", "gridExtra", "HLMdiag", "Hmisc",
+           "influence.ME", "knitr", "lme4", "lmerTest", "lsmeans",
+           "MCMCglmm", "MEMSS", "metafor", "mlmRev", "multcomp",
+           "MuMIn", "numDeriv", "ordinal", "pbkrtest", "pedigreemm",
+           "plotMCMC", "plotrix", "plyr", "R2admb", "R2jags",
+           "reshape2", "RLRsim", "rmarkdown", "robustlmm", "rockchalk", 
+           "SASmixed", "spGLMM", "stargazer", "texreg")
 install.packages(pkgs1,dependencies=TRUE)
 ## get INLA:
 source("http://www.math.ntnu.no/inla/givemeINLA.R")

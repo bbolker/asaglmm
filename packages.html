@@ -189,16 +189,17 @@ hr {
 <body>
 <p>Install primary GLMM-fitting packages (and a variety of extras):</p>
 
-<pre><code class="r">pkgs1 &lt;- c(&quot;lme4&quot;,&quot;MCMCglmm&quot;,&quot;blme&quot;,&quot;ggplot2&quot;,&quot;gridExtra&quot;,
-           &quot;coda&quot;,&quot;aods3&quot;,&quot;plotMCMC&quot;,&quot;bbmle&quot;,&quot;pbkrtest&quot;,
-           &quot;plotrix&quot;,&quot;emdbook&quot;,&quot;Hmisc&quot;,&quot;reshape2&quot;,&quot;plyr&quot;,
-           &quot;numDeriv&quot;,&quot;dplyr&quot;,&quot;R2admb&quot;,&quot;glmmML&quot;,&quot;spGLMM&quot;,
-           &quot;R2jags&quot;,&quot;RLRsim&quot;,&quot;lmerTest&quot;,&quot;mlmRev&quot;,&quot;MEMSS&quot;,
-           &quot;gamm4&quot;,&quot;afex&quot;,&quot;arm&quot;,&quot;cAIC4&quot;,&quot;HLMdiag&quot;,&quot;influence.ME&quot;,
-           &quot;pedigreemm&quot;,&quot;lsmeans&quot;,&quot;robustlmm&quot;,&quot;agridat&quot;,
-           &quot;AICcmodavg&quot;,&quot;benchmark&quot;,&quot;metafor&quot;,&quot;multcomp&quot;,
-           &quot;MuMIn&quot;,&quot;ordinal&quot;,&quot;SASmixed&quot;,&quot;texreg&quot;,&quot;stargazer&quot;,
-           &quot;rockchalk&quot;,&quot;knitr&quot;,&quot;rmarkdown&quot;)
+<pre><code class="r">pkgs1 &lt;- c(&quot;afex&quot;, &quot;agridat&quot;, &quot;AICcmodavg&quot;, &quot;aods3&quot;,
+           &quot;arm&quot;, &quot;bbmle&quot;, &quot;benchmark&quot;, 
+           &quot;blme&quot;, &quot;cAIC4&quot;, &quot;car&quot;,
+           &quot;coda&quot;, &quot;dplyr&quot;, &quot;effects&quot;, &quot;emdbook&quot;, &quot;gamm4&quot;, 
+           &quot;ggplot2&quot;, &quot;glmmML&quot;, &quot;gridExtra&quot;, &quot;HLMdiag&quot;, &quot;Hmisc&quot;,
+           &quot;influence.ME&quot;, &quot;knitr&quot;, &quot;lme4&quot;, &quot;lmerTest&quot;, &quot;lsmeans&quot;,
+           &quot;MCMCglmm&quot;, &quot;MEMSS&quot;, &quot;metafor&quot;, &quot;mlmRev&quot;, &quot;multcomp&quot;,
+           &quot;MuMIn&quot;, &quot;numDeriv&quot;, &quot;ordinal&quot;, &quot;pbkrtest&quot;, &quot;pedigreemm&quot;,
+           &quot;plotMCMC&quot;, &quot;plotrix&quot;, &quot;plyr&quot;, &quot;R2admb&quot;, &quot;R2jags&quot;,
+           &quot;reshape2&quot;, &quot;RLRsim&quot;, &quot;rmarkdown&quot;, &quot;robustlmm&quot;, &quot;rockchalk&quot;, 
+           &quot;SASmixed&quot;, &quot;spGLMM&quot;, &quot;stargazer&quot;, &quot;texreg&quot;)
 install.packages(pkgs1,dependencies=TRUE)
 ## get INLA:
 source(&quot;http://www.math.ntnu.no/inla/givemeINLA.R&quot;)
