@@ -1,0 +1,146 @@
+## Calculating the variance-covariance matrix of variance-covariance parameters
+
+One relatively frequent request from `lme4` users is for the capability to compute the variance-covariance matrix of the variance parameters themselves.  In the `nlme` package this was (implicitly) available via the `intervals()` function in the `nlme` package (which returned Wald confidence intervals); `lme4` has switched to providing profile and parametric bootstrap, and *not* Wald confidence intervals, because the Wald intervals on variance-covariance parameters are often really, really bad.
+
+Nevertheless, there are sometimes reasons that one wants to get the asymptotic (Wald) variance-covariance matrix of the variance-covariance parameters themselves.  This document shows how to do that for ML estimates, and discusses the issues more generally (so that hopefully a similar solution for the REML estimates will also be feasible soon). 
+
+The basic problem is `lme4`'s deviance function uses a scaled Cholesky-factor parameterization: it's easy enough to get an approximate Hessian of these ($\theta$) parameters by finite differencing, but annoying to convert them to the $\sigma$ or $\sigma^2$ scale.  However, for ML estimates we can use an internal function (`devfun2`) that is parameterized on the $\sigma$ scale.  (To get asymptotic variance-covariance estimates for REML estimates we will either need to adapt `devfun2` to the REML scale, or figure out a more direct scale conversion: see notes below.
+
+### Preliminaries
+
+Fit the good old `sleepstudy` model:
+```{r fitmodels,message=FALSE}
+library(lme4)
+fm1 <- lmer(Reaction ~ Days + (Days | Subject), sleepstudy)
+```
+
+For comparison with the likelihood profile (which uses ML rather than REML) we also fit the ML equivalent:
+```{r mlfit}
+fm1.ML <- refitML(fm1)
+```
+
+Also fit with `lme` so that we can compare the results of `intervals()`:
+```{r lmefit,message=FALSE}
+library(nlme)
+fm1.lme <- lme(Reaction ~ Days, random = ~Days| Subject, sleepstudy)
+fm1.lme.ML <- update(fm1.lme,method="ML")
+``` 
+
+### Finite differences on the $\sigma$ scale
+
+The easiest way to do what we want is to the internal `devfun2()` function, which is used within `profile` --- it is essentially the same as the basic `devfun()`, but it uses a standard deviation/correlation parameterization (and adds the residual standard deviation as a parameter) rather than a Cholesky parameterization:
+```{r devfun2}
+dd.ML <- lme4:::devfun2(fm1.ML,useSc=TRUE,signames=FALSE)
+```
+At the moment I think `devfun2()` cannot be used for REML fits
+(as it is designed for computing likelihood profiles, that wouldn't
+make much sense).
+
+The other way to do this would be to compute the Hessian for `devfun2`, then do the requisite calculus and linear algebra on the function ${\cal F}$ that translates from the Cholesky to the stddev/corr parameterization to convert the Hessian to the new parameterization.
+
+Retrieve the standard deviation/correlation parameters, in the correct order:
+```{r getpars}
+vv <- as.data.frame(VarCorr(fm1.ML)) ## need ML estimates!
+## name for consistency with profile object below
+vnames <- c(sprintf(".sig%02d",1:3),".sigma")
+pars <- setNames(vv[c(1,3,2,4),"sdcor"],vnames)
+```
+
+Compute second derivatives (the factor of 2 converts from the deviance to the log-likelihood scale):
+```{r gethess}
+library(numDeriv)
+hh1 <- hessian(dd.ML,pars)
+vv2 <- 2*solve(hh1)
+```
+
+### Results and comparisons
+
+Now that we have the Wald variance-covariance matrix, I'm going
+to cook up a little bit of structure that will let us use 
+`confint.default` to compute the Wald intervals:
+
+```{r confints}
+dimnames(vv2) <- list(vnames,vnames)
+vhack <- list(coefficients=pars,vcov=vv2)
+vcov.default <- function(object,...) object$vcov
+(wci <- confint.default(vhack))
+```
+
+These are close, although not precisely the same as, the Wald
+intervals produced by `lme` (note that the order differs ---
+the `lme4` stuff is using "lower-triangular" order, so that
+the correlation (`.sig02`) comes between the two standard deviation estimates,
+while `lme` (and the `as.data.frame.VarCorr.merMod` method from `lme4`)
+puts the correlations last).
+
+```{r intervals}
+(lmeint <- intervals(fm1.lme.ML,which="var-cov"))
+```
+
+#### Comparison with likelihood profile
+
+Compute the likelihood profile:
+```{r fitprof,cache=TRUE}
+pp <- profile(fm1,which="theta_")
+```
+
+The linear approximation to the profile for a focal parameter $x$ should
+be $\zeta \approx (x-\hat x)/\sigma_x$, where $\hat x$ is the MLE and
+$\sigma_x$ is the Wald standard deviation:
+```{r profplot}
+dfprof <- as.data.frame(pp)
+mframe <- data.frame(.par=vnames,ctr=pars,slope=1/sqrt(diag(vv2)))
+dfprof <- merge(dfprof,mframe)
+library(ggplot2); theme_set(theme_bw())
+ggplot(dfprof,aes(.focal,.zeta))+geom_line()+geom_point()+
+    facet_wrap(~.par,scale="free")+
+    geom_hline(yintercept=0,color="gray")+
+    geom_hline(yintercept=c(-1.96,1.96),color="gray",lty=2)+
+    geom_line(aes(y=(.focal-ctr)*slope),color="red")
+```    
+In this particular example, there's not a huge divergence from
+linearity over the range defined by the 95% confidence intervals
+(dashed horizontal lines) ... as confirmed by the confidence intervals.
+
+#### Comparison of CIs
+
+```{r cmpconf,echo=FALSE,fig.height=3,fig.width=7}
+pci <- confint(pp)
+nf  <- function(x) setNames(as.data.frame(x),c("lwr","upr"))
+lme4Dat <- rbind(
+   data.frame(method="profile_lme4",
+              par=rownames(pci),est=pars,nf(pci)),
+    data.frame(method="Wald_lme4",
+               par=rownames(wci),est=pars,nf(wci)))
+lmeDat <- data.frame(method="Wald_lme",
+       par=vnames,est=pars, ## close enough to identical
+     rbind(nf(lmeint$reStruct$Subject[c(1,3,2),c(1,3)]),
+           setNames(lmeint$sigma[c(1,3)],c("lwr","upr"))))
+allDat <- rbind(lme4Dat,lmeDat)
+ggplot(allDat,aes(par,est,ymin=lwr,ymax=upr,colour=method))+
+    geom_pointrange(position=position_dodge(width=0.5))+
+    facet_wrap(~par,scale="free",nrow=1)
+```
+Hmm.  Perhaps the `lme` Wald intervals are calculated on a different
+scale, e.g. the log-$\sigma$ scale?  They look even closer to the
+profile CIs ...
+
+### Continuing
+
+Second derivative via chain rule?  We're looking for $\frac{\partial^2 f(g(x))}{\partial x^2}$ (or $\frac{\partial^2 (f \circ g)(x)}{\partial x^2}$ may be easier notation in this case).
+
+I should have been able to figure this out myself, but looking at
+[Faà di Bruno's formula](http://en.wikipedia.org/wiki/Fa%C3%A0_di_Bruno%27s_formula):
+
+$$
+\frac{\partial^n}{\partial x_1 \dots \partial x_n} =
+\sum_{\pi \in \Pi} f^{(|\pi|}(y) \cdot \prod_{B \in \pi} \frac{\partial^{|B|}y}{\prod_{j \in B} \partial x_j}
+$$
+
+For $n=2$ the partitions are just $\{\{1\},\{2\}\}$ and $\{\{1,2\}\}$
+$$
+\frac{\partial^2 f(y)}{\partial x_1 x_2} = 
+f'(y) \frac{\partial^2 y}{\partial x_1 x_2} + f''(y) \frac{\partial y}{\partial x_1} \frac{\partial y}{\partial x_2}
+$$
+
+The derivative of a matrix cross-product $\bm X \bm X^T$ should be fairly straightforward (I think?); e.g. for a two-by-two crossproduct works out as $(\bm\lambda \bm\lambda^T)' = \bm\lambda' \bm\lambda^T + \bm\lambda \bm(\lambda^T)'$, where differentiation is element-by-element on the RHS.

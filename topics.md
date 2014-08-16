@@ -1,19 +1,57 @@
 This is a **preliminary** list of topics that I would like to cover.
 
+Monday morning (9-noon)
+=======================
+
+* introductions
 * visualization: 
     * Cleveland hierarchy
 	* grammar of graphics
-    * graphical challenges of multi-level data	
-	* exploratory vs diagnostic vs presentation
+    * exploratory vs diagnostic vs presentation
+    * coefficient plots
+    * graphical challenges of multi-level/hierarchical data	
+	     * spaghetti plots; facets
 * model definition
-    * random effects: varied perspectives
-	* model specification: RE, grouping variables, crossed vs nested, etc.
-	* advanced model specification (flexLambda, group-specific variances, etc.)
+    * GLMs: exponential family
+    * random effects: varied perspectives (Gelman 2005)
+	     * allowance for non-independence
+	     * shrinkage estimation
+		 * (random) sample from exchangeable units
+		 * units within a hyperprior specification
+		 * variance as target of estimation
+		 * nuisance parameters
+		 * allow extrapolation to other units
+	* model specification: scalar vs non-scalar RE, grouping variables, crossed vs nested, etc.
+	     * "keep it maximal"? 
+	* advanced model specification (`flexLambda`, `dummy`/group-specific variances, double-bar notation, etc.)
+	* overdispersion, observation-level random effects
+	* R-side effects; correlation structures on latent variables
+	* conditional, marginal, restricted likelihood
 * avoiding mixed models
-    * residual tests from unmixed
+    * residual tests from iid model
 	* fixed effects
-    * two-stage models
-	* Hausman tests
+	* aggregate (Murtaugh 2007)
+    * two-stage models (`lmList` etc.)
+	* Hausman tests (?)
+* examples:
+    * tundra carbon
+	* *Glycera*
+	* *Arabidopsis* clipping
+	* owls
+	* ticks
+	* wildflowers?
+	* gopher tortoise
+* *exercise*: Banta, owls, wildflowers, stuff from GLMM chapter?
+	
+Monday afternoon (1-5 PM)
+==========================
+
+* estimation
+    * deterministic algorithms
+        * method of moments
+		* PQL
+		* Laplace approximation
+		* adaptive Gauss-Hermite quadrature
 * simulation and prediction	
 * computation and modularity
 * inference
@@ -29,6 +67,9 @@ This is a **preliminary** list of topics that I would like to cover.
     * group-level
 	* posterior predictive summaries
 * GLMMs: PQL vs Laplace vs AGHQ
+	
+Tuesday morning (9-noon)
+==========================
 * extensions:
     * zero-inflation
 	* compound distributions (negative binomial etc.)
@@ -41,6 +82,9 @@ This is a **preliminary** list of topics that I would like to cover.
 	* other R: glmmML, MASS::glmmPQL
 	* toolboxes: BUGS; AD Model Builder
 	* new: TMB, INLA, Stan, NIMBLE
+
+Tuesday afternoon (1-5 PM)
+==========================
 
 Papers
 ===========
