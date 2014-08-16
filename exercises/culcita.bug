@@ -1,0 +1,16 @@
+model
+{
+    for (i in 1:ncoef) {
+        beta[i] ~ dnorm(0.00000E+00, 0.001)
+    }
+    sd.b ~ dunif(0.00000E+00, maxsdprior)
+    tau.b <- 1/sd.b^2
+    for (i in 1:nblock) {
+        u[i] ~ dnorm(0.00000E+00, tau.b)
+    }
+    for (i in 1:nobs) {
+        eta[i] <- inprod(X[i, ], beta) + u[block[i]]
+        p[i] <- 1/(1 + exp(-eta[i]))
+        obs[i] ~ dbern(p[i])
+    }
+}

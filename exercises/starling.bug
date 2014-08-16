@@ -1,0 +1,18 @@
+model
+{
+    for (i in 1:ntot) {
+        eta[i] <- inprod(X[i, ], beta)
+        eta2[i] <- eta[i] + u1[subject[i]]
+        stmass[i] ~ dnorm(eta2[i], tau.res)
+    }
+    for (i in 1:nindiv) {
+        u1[i] ~ dnorm(0.00000E+00, tau.indiv)
+    }
+    for (i in 1:ncoef) {
+        beta[i] ~ dnorm(0.00000E+00, 0.001)
+    }
+    tau.indiv ~ dgamma(0.01, 0.01)
+    tau.res ~ dgamma(0.01, 0.01)
+    sd.indiv <- pow(tau.indiv, -0.5)
+    sd.res <- pow(tau.res, -0.5)
+}

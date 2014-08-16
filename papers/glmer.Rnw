@@ -1,11 +1,19 @@
+%\VignetteEngine{knitr::knitr}
+%\VignetteDepends{ggplot2}
+%\VignetteIndexEntry{Fitting Generalized Linear Mixed-Effects Models using lme4}
 \documentclass{jss}
 %% need no \usepackage{Sweave.sty}
 %\usepackage{lineno}
+\usepackage[T1]{fontenc}% for correct hyphenation and T1 encoding
 \usepackage[utf8]{inputenc}
-\newcommand{\bmb}[1]{{\color{red} \emph{#1}}}
-\newcommand{\scw}[1]{{\color{blue} \emph{#1}}}
+\usepackage{lmodern}% latin modern font
 \usepackage[american]{babel}  %% for texi2dvi ~ bug
 \usepackage{bm,amsmath,thumbpdf,amsfonts}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\VEC}{vec}
+\newcommand{\bmb}[1]{{\color{red} \emph{#1}}}
+\newcommand{\scw}[1]{{\color{blue} \emph{#1}}}
+
 %% BMB: what does JSS assume?
 %\bibliographystyle{chicago}
 \author{
@@ -22,18 +30,25 @@
 \Abstract{%
   The \pkg{lme4} \proglang{R} package can be used to fit generalized linear
   mixed models (GLMMs), which extend the class of linear mixed models
-  (LMMs). The two main extensions provided by GLMMs is that (1) they
-  allow for the conditional distribution of the response given the
-  random effects to be something other than a Gaussian (e.g. binomial,
-  Poisson) and (2) the conditional mean depends upon a linear
-  combination of fixed and random effects through an inverse link
-  function. The conditional mode of the random effects, given the
-  observed data is determined through penalized iteratively reweighted
-  least squares (PIRLS). We optimize the Laplace approximation at the
-  conditional mode to determine the MLE's of the parameters.  In some
-  simple cases, a more accurate approximation, adaptive Gauss-Hermite
-  quadrature (AGQ), can be used instead, at the expense of greater
-  computational complexity.}
+  (LMMs). The two main extensions provided by GLMMs are (1)
+  allowing for the conditional distribution of the response given the
+  random effects to be non-Gaussian (e.g. binomial,
+  Poisson) and (2) allowing the conditional mean to be
+  a nonlinear function of a linear combination of the fixed
+  and random effect coefficients, via an inverse link
+  function. The conditional mode of the random effects given the
+  observed data, the variance-covariance matrix of the random 
+  effects, and the fixed effect parameters
+  is determined through penalized iteratively reweighted
+  least squares (PIRLS). We compute an approximation of the integral
+  over the distributions of the conditional modes to compute
+  the MLE for a for given set of parameters (by default we use
+  Laplace approximation, or alternatively more computationally
+  expensive adaptive Gauss-Hermite quadrature). The package provides
+  all the standard features available for GLMs in base \proglang{R},
+  including the possibility of user-specified distributions and link
+  functions and the standard set of accessor functions.}
+
 \Keywords{%
   sparse matrix methods,
   generalized linear mixed models,
@@ -97,20 +112,22 @@ library(lattice)
 library(reshape2)
 library(plyr)
 opts_chunk$set(engine='R',dev='pdf',fig.width=10,
-               fig.height=6.5,strip.white=all,
+               fig.height=6.5,prompt=TRUE,
+               ## strip.white=all,
                cache=TRUE,tidy=FALSE,comment=NA)
 @ % $ <- for emacs ESS
-\setkeys{Gin}{width=\textwidth}
+% \setkeys{Gin}{width=\textwidth} % obsolete?
 \begin{document}
 \section{Introduction}
 \label{sec:intro}
 %\bmb{equations are all defined in part~I \ldots}
 
 The \pkg{lme4} package for \proglang{R} can be used to fit a broad
-range of mixed-effects models.  One of the main advantages of
+range of mixed-effects models.  One major advantage of
 \pkg{lme4} over its predecessor, \pkg{nlme}, is that it can be used to
-fit both linear mixed models (LMMs) and generalized linear mixed
-models (GLMMs), which combine the flexibility of LMMs and generalized
+fit generalized linear mixed
+models (GLMMs), which combine the flexibility of
+linear mixed models (LMMs) and generalized
 linear models (GLMs). In a companion paper, we have described the
 facilities in \pkg{lme4} for fitting linear mixed models (LMMs). Here
 we describe the facilities for fitting GLMMs.
@@ -118,10 +135,10 @@ we describe the facilities for fitting GLMMs.
 \section{Generalized Linear Mixed Models}
 \label{sec:GLMMdef}
 
-Generalized linear mixed models (GLMMs) extend the class of
-generalized linear models (GLMs) by allowing for both fixed and random
+Generalized linear mixed models extend the class of
+generalized linear models by allowing for both fixed and random
 effects. In a GLM, the length-$n$ vector-valued response variable,
-$\mc Y$ has a distribution in the exponential family (e.g. normal,
+$\mc Y$, has a conditional distribution in the exponential family (e.g. Normal,
 binomial, Poisson). The mean, $\bm\mu_{\mc Y }$, of $\mc Y$ depends on
 a linear predictor,
 \begin{equation}
@@ -149,7 +166,7 @@ $\bm\eta$.
 % the scalar inverse link, $g^{-1}$, applied component-wise to
 % $\bm\eta$.  % commented out the repetition - DMB
 
-In the GLMM case, the mean of the exponential family distribution of
+In the GLMM case, the vector of means of the exponential family distribution of
 $\mc Y$ depends on an unobserved random vector, $\mc B$, of length
 $q$, called the random-effects coefficient vector. In particular, the
 conditional mean of $\mc Y$ given that $\mc B = \bm b$, writen
@@ -160,25 +177,25 @@ $\bm\mu_{\mc Y|\mc B = \bm b}$, depends on the linear predictor,
 \end{equation}
 where $\bm Z$ is an $n \times q$ random-effects model matrix. Similar
 to the GLM case, the mapping from the conditional mean, $\bm\mu_{\mc
-  Y|\mc B = \bm b}$, to the linear predictor, $\bm\eta$, 
+  Y|\mc B = \bm b}$, to the linear predictor, $\bm\eta$, is
 \begin{equation}
   \label{eq:linkfunii}
   \bm Z\bm b + \bm X\bm\beta=
   \bm\eta=
   \bm g\left(\bm\mu_{\mc Y|\mc B =\bm b}\right) ,
 \end{equation}
-The random vector $\mc B$, is assumed to be distributed multivariate
+The random vector $\mc B$ is assumed to be distributed multivariate
 normally,
 \begin{equation}
   \label{eq:2}
   \mc B \sim \mc N(\bm 0, \bm\Sigma_\theta)
 \end{equation}
 where $\bm\Sigma_\theta$ is the covariance matrix of $\mc B$, which
-depends on a vector of covariance parameters, $\theta$.
+depends on a vector of covariance parameters, $\bm\theta$.
 
 The optimization routines of \pkg{lme4} never actually compute
 $\Sigma_\theta$ directly, and instead use the covariance factor,
-$\bm\Lambda_\theta$, which is a matrix squareroot of $\Sigma_\theta$,
+$\bm\Lambda_\theta$, which is a matrix square root of $\Sigma_\theta$,
 \begin{equation}
   \label{eq:GLMMSigma}
   \bm\Sigma_\theta=\bm\Lambda_\theta\bm\Lambda_\theta\trans .
@@ -189,7 +206,8 @@ allows us to write the linear predictor as
   \label{eq:GLMMlinpredii}
   \bm\eta=\bm Z\bm\Lambda_\theta\bm u+\bm X\bm\beta ,
 \end{equation}
-where the spherized random effects vector, $\bm u$, is a realization
+where the spherical random effects vector, $\bm u$
+(see \cite{lmerJSS}) is a realization
 of the random vector, $\mc U$,
 \begin{equation}
   \label{eq:UdistGLMM}
@@ -262,7 +280,7 @@ that models with any family and link function can be
 fitted (although common families and link functions are
 hard-coded in C++ for computational speed),
 in contrast to previous versions of \code{lme4} and other 
-R packages for GLMM fitting.
+\proglang{R} packages for GLMM fitting.
 
 The likelihood can now be expressed as
 \begin{equation}
@@ -287,7 +305,7 @@ return to the question of evaluating the integral (\ref{eq:GLMMlike}).
 \label{sec:conditionalMode}
 
 The iteratively reweighted least squares (IRLS) algorithm is an
-incredibly efficient method of determining the maximum likelihood
+efficient method of determining the maximum likelihood
 estimates of the coefficients in a generalized linear model.  We
 extend it to a \emph{penalized iteratively reweighted least squares}
 (PIRLS) algorithm for determining the conditional mode, $\tilde{\bm
@@ -337,6 +355,8 @@ $\bm\mu_i$.  That is
 \end{equation}
 which will be a diagonal matrix so, as for the weights, we store and
 manipulate the Jacobian as a vector.
+
+\bmb{Need to describe step-halving here!}
 
 The minimizer, $\bm\delta_i$, of (\ref{eq:incr}) satisfies
 \begin{equation}
@@ -445,7 +465,7 @@ str(cbpp)
 and the model
 <<m1>>=
 print(m1 <- glmer(cbind(incidence, size-incidence) ~ period + (1|herd),
-                  cbpp, binomial), corr=FALSE)
+      cbpp, binomial), corr=FALSE)
 @
 This model has been fit by minimizing the Laplace approximation to the
 deviance.  We can assess the quality of this approximation by
@@ -791,7 +811,8 @@ of plots (Figure~\ref{fig:glmerDiag}).
 At present, \code{lme4} does not offer other standard
 diagnostic tools such as influence measures or
 standardized residuals, due to technical difficulties
-in computing the hat matrix. \bmb{can we fix this?}
+in computing the hat matrix. \bmb{no longer true -- update
+(after checking that the \code{hatvalues} results actually make sense!)}
 <<glmerDiagFake,eval=FALSE>>=
 ## basic residual plot
 plot(gm1)
@@ -1053,14 +1074,16 @@ anova(cm1,cm2,cm3,cm4,cm5,cm6)
 
 We seek to maximize the unscaled conditional log density for a GLMM
 over the conditional modes, $\bm u$. This problem is very similar to
-maximizing the log-likelihood for a GLM, about which there is a large
-amount of work. The standard algorithm for dealing with this kind of
+maximizing the log-likelihood for a GLM, which is a very
+thoroughly studied problem \citep[e.g.][]{McCullaghNelder1989}.
+The standard algorithm for dealing with this kind of
 problem is iteratively reweighted least squares (IRLS). Here we modify
 IRLS by incorporating a penalty term that accounts for variation in
-the random effects, which we call penalized iteratively reweighted
+the random effects; we call the resulting algorithm
+penalized iteratively reweighted
 least squares (PIRLS).
 
-The unscaled conditional log-density takes the following form,
+The unscaled conditional log-density takes the form,
 \begin{equation}
   f(\bm u) = \log p(\bm y, \bm u | \bm\beta, \bm\theta) = 
   \bm\psi^\top \bm A \bm y - 
@@ -1100,7 +1123,7 @@ itself based on Newton's method, which we apply first.
 
 To apply Newton's method, we need the gradient and the Hessian of the
 unscaled conditional log-likelihood. Following standard GLM theory
-(e.g. McCullagh and Nelder 1989), we use the chain rule,
+\citep{McCullaghNelder1989}, we use the chain rule,
 \begin{displaymath}
   \frac{d L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u} = 
   \frac{d L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm\psi}
@@ -1119,9 +1142,9 @@ inverse diagonal variance matrix,
 \begin{displaymath}
   \frac{d \bm\psi}{d \bm\mu} = \bm V^{-1}
 \end{displaymath}
-and the diagonal Jaccobian matrix,
+and the diagonal Jacobian matrix,
 \begin{displaymath}
-\frac{d \bm\mu}{d \bm\eta} = \bm M
+\frac{d \bm\mu}{d \bm\eta} = \bm M \quad .
 \end{displaymath}
 Finally, because $\bm\beta$ affects $\bm\eta$ only linearly,
 \begin{displaymath}
@@ -1134,7 +1157,7 @@ Therefore we have,
   \bm V^{-1}
   \bm M
   \bm Z \bm\Lambda_\theta +
-  \bm u^\top
+  \bm u^\top \quad .
 \label{eq:dPDEVdu}
 \end{equation}
 This is very similar to the gradient for GLMs with respect to fixed
@@ -1144,21 +1167,21 @@ addition of the $\bm u^\top$ term.
 
 Again we apply the chain rule to take the Hessian,
 \begin{equation}
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm u} = 
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm\mu}
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm u} = 
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm\mu}
   \frac{d \bm\mu}{d \bm\eta}
   \frac{d \bm\eta}{d \bm u} + \bm I_q
 \end{equation}
 which leads to,
 \begin{equation}
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm u} = 
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm\mu}\bm
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm u} = 
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm\mu}\bm
   M \bm Z \bm\Lambda_\theta 
   + \bm I_q
 \end{equation}
 The first derivative in this chain can be expressed as,
 \begin{equation}
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm\mu} =
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm\mu} =
   -\bm\Lambda_\theta^\top \bm Z^\top \bm M \bm V^{-1} \bm A  + 
   \bm\Lambda_\theta^\top \bm Z^\top \left[ \frac{d \bm M \bm V^{-1}}{d \bm\mu} \right] \bm A \bm R
 \end{equation}
@@ -1180,11 +1203,11 @@ This result can be simplified by expressing it in terms of a weighted
 random-effects design matrix, $\bm U = \bm A^{1/2}\bm V^{-1/2}\bm M
 \bm Z \bm\Lambda_\theta$,
 \begin{equation}
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm u} = 
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm u} = 
   -\bm U^\top\left( 
     \bm I_n - 
     \bm V \bm M^{-1}\left[ \frac{d \bm V^{-1}\bm M}{d \bm\mu} \right] \bm R
-  \right) \bm U + \bm I_q
+  \right) \bm U + \bm I_q \quad .
 \label{eq:betaHessian}
 \end{equation}
 
@@ -1197,7 +1220,7 @@ There are two ways to further simplify this expression for $\bm U^\top
 being used. Canonical links have the property that $\bm V = \bm M$,
 which means that for canonical links,
 \begin{equation}
-  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm u} = 
+  \frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm u} = 
   -\bm U^\top\left( 
     \bm I_n - 
     \bm I_n \left[ \frac{d \bm I_n}{d \bm\mu} \right] \bm R
@@ -1210,7 +1233,7 @@ u$. The diagonal residual matrix, $\bm R$, has expectation
 0. Therefore, because the response only enters into the expression for
 the Hessian via $\bm R$, we have that,
 \begin{equation}
-  E\left(\frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u d \bm
+  E\left(\frac{d^2 L(\bm\beta, \bm\theta | \bm y, \bm u)}{d \bm u \, d \bm
       u} | \bm u \right) = 
   -\bm U^\top\left( 
     \bm I_n - 

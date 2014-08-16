@@ -1453,7 +1453,7 @@ compiled code as in \pkg{lme4} itself).  This implementation is called
     \hline
     Relative covariance factor & \code{lambda} & $\bLt$
     (Equation~\ref{eq:relcovfac})
-    & sparse double lower-triangular matrix  \\
+    & double sparse lower-triangular matrix  \\
     Random-effects Cholesky factor & \code{L} & $\bm L_{\bm\theta}$
     (Equation~\ref{eq:blockCholeskyDecomp})
     & double sparse triangular matrix \\
@@ -1746,7 +1746,7 @@ convergence properties.  \pkg{lme4} incorporates two built-in
 optimization choices, an implementation of the Nelder-Mead simplex
 algorithm adapted from Steven Johnson's \code{NLopt} C library
 \citep{NLopt} and a wrapper for Powell's BOBYQA
-algorithm, implemented in the \pkg{minqa} package \cite{minqa_pkg}
+algorithm, implemented in the \pkg{minqa} package \citep{minqa_pkg}
 as a wrapper around
 Powell's original Fortran code \citep{Powell_bobyqa}.  More generally,
 \pkg{lme4} allows any user-specified optimizer that (1) can work with
@@ -2364,7 +2364,7 @@ scale-location plots,
 plot(fm1, sqrt(abs(resid(.))) ~ fitted(.),
      type = c("p", "smooth"))
 @
-and quantile-quantile plots, (from \pkg{lattice})
+and quantile-quantile plots (from \pkg{lattice}),
 <<diagplot3,fig.keep="none">>=
 qqmath(fm1, id = 0.05)
 @
@@ -3061,9 +3061,9 @@ with(environment(devianceFunction), {
     c(Residual = sig, Subject = sig*pp$theta)
 })
 @
-Note that the random effects variance requires no matrix algebra in
+Computing the random effects variance requires no matrix algebra in
 this case because the covariance matrix of the random effects is
-proportional to the identity matrix
+proportional to the identity matrix.
 
 \subsection{Additive models}
 \label{sec:additive}
