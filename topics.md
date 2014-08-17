@@ -1,7 +1,10 @@
-This is a **preliminary** list of topics that I would like to cover.
+* This is a **preliminary** list of topics that I would like to cover.
+* I have no idea if these ideas are really going to fit into the time available. Hopefully we will spend a chunk of time working on individual data sets.
 
 Monday morning (9-noon)
 =======================
+
+## Introduction and context
 
 * introductions
 * visualization: 
@@ -22,7 +25,7 @@ Monday morning (9-noon)
 		 * nuisance parameters
 		 * allow extrapolation to other units
 	* model specification: scalar vs non-scalar RE, grouping variables, crossed vs nested, etc.
-	     * "keep it maximal"? 
+	     * "keep it maximal" (Barr et al 2013)?
 	* advanced model specification (`flexLambda`, `dummy`/group-specific variances, double-bar notation, etc.)
 	* overdispersion, observation-level random effects
 	* R-side effects; correlation structures on latent variables
@@ -41,72 +44,96 @@ Monday morning (9-noon)
 	* ticks
 	* wildflowers?
 	* gopher tortoise
-* *exercise*: Banta, owls, wildflowers, stuff from GLMM chapter?
+* *exercise*: Banta, owls, stuff from GLMM chapter?
 	
 Monday afternoon (1-5 PM)
 ==========================
 
+## Estimation
+
 * estimation
-    * deterministic algorithms
+    * finding conditional modes
+        * `lme4` (linear solution; PIRLS)
+		* `glmmADMB` (brute force)
+    * integration: deterministic algorithms
         * method of moments
 		* PQL
 		* Laplace approximation
 		* adaptive Gauss-Hermite quadrature
-* simulation and prediction	
-* computation and modularity
-* inference
-    * Wald < LRT/profile < parametric bootstrap; MCMC
-	* issues: finite size, boundaries
-* information criteria and (G)LMMs: (levels of focus, AIC vs cAIC)
-* R-squared and variable importance measures
+		* (INLA)
+	* integration; stochastic algorithms
+	    * MCMC
+		* etc. (MCEM; data cloning)
+* modular structure of `lme4`
+    * conceptual
+        * level I: PLS/finding conditional modes (lmer paper
+    	* level II: PIRLS/integration
+	    * level III: nonlinear optimization
+    	* level IV: formula construction, interface, accessor methods, prediction and simulation, etc.
+	* programming
+	    * `[g]lFormula`
+		* `mk(Gl|L)merDevfun`
+		* `optimize(Gl|L)mer`
+		* `updateGlmerDevfun`
+		* `mkMerMod`
+
+Tuesday morning
+============================
+
+## Diagnostics and troubleshooting
+
 * troubleshooting
     * issues with few levels of RE (and solutions)
 	* assessing singular fits, convergence warnings
+	* slices
 * diagnostics
     * individual-level
     * group-level
 	* posterior predictive summaries
-* GLMMs: PQL vs Laplace vs AGHQ
+* assessing temporal/spatial covariance in residuals
+
+## Inference (core)
+
+* model comparison: Wald < LRT < parametric bootstrap; MCMC
+* confidence intervals: Wald < likelihood profile < PB; MCMC
+* finite size effects (LMMs: $\chi^2$ vs $F$)
+* finite size effects (Bartlett)
+* boundary effects
+
+Tuesday afternoon
+===========================
+
+## Post-fit assessment/extended inference
+
+* Variances of conditional modes
+* Prediction and simulation
+* Confidence intervals on predictions/derived quantities
+* information criteria and (G)LMMs: (levels of focus, AIC vs DIC vs cAIC)
+* R-squared, repeatability, and all that
+* Variable importance and all that
+    * scaled coefficients
 	
-Tuesday morning (9-noon)
-==========================
-* extensions:
-    * zero-inflation
-	* compound distributions (negative binomial etc.)
-	* spatial/temporal (phylogenetic) correlation structures, random fields
-	* mixture models?
+## Extensions	
+
+* compound distributions (negative binomial etc.)
+    * `glmer.nb`
+* zero-inflation
+* restricted variance structures, revisited
+* correlation structures
+    * nesting
+	* spatial/temporal (phylogenetic) correlation structures, pedigrees, random fields
+	* SAR/CAR??
+	* discrete mixture models?
 	* GAMMs
-* penalized methods (lasso/fence)
+* penalized methods 
+    * lasso; fence?
+	* penalization via random effects specification with fixed $\theta$
+* multivariate models via stacking; multitype models
+* survival analysis, non-standard links, offsets ...
+
 * tools:
     * core: lme4, glmmADMB, MCMCglmm, nlme
 	* other R: glmmML, MASS::glmmPQL
 	* toolboxes: BUGS; AD Model Builder
 	* new: TMB, INLA, Stan, NIMBLE
 
-Tuesday afternoon (1-5 PM)
-==========================
-
-Papers
-===========
-
-* Bolker et al. 2008
-* Pinheiro and Chao (GHQ)
-* Pinheiro and Bates (variance-cov parameterizations)
-* Stroup
-* Roulin et al 2007 (owls)
-* McKeon et al (Culcita)
-* Belshe et al (tundra)
-* Elston et al (ticks)
-* Breslow 2003 (PQL)
-* Vaida and Blanchard (conditional AIC)
-* Spiegelhalter et al (DIC)
-* Bolker et al 2013
-* Gelman et al 2006 (priors)
-* Ozgul et al 2009 (tortoises)
-* Gelman 2005 (ANOVA)
-* Kenward et al 1997
-* Schaalje 2002
-* Greven et al 2010
-* van de Pol (decomposition)
-* Murtaugh 2007 (simplicity)
-* Jiang (fence)
