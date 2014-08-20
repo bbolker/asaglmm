@@ -1,5 +1,9 @@
 ## Convergence testing
 
+Here's an example sent to me by KT (who shall otherwise remain anonymous).
+He wanted to know why he was getting singular fits (i.e., one of the variance
+components is zero):
+
 ```{r pkgs,message=FALSE}
 library(lattice)
 library(lme4)
@@ -8,82 +12,131 @@ library(reshape2)
 library(ggplot2); theme_set(theme_bw())
 library(gridExtra)  ## for grid.arrange
 library(bbmle) ## for slice2D; requires *latest* r-forge version (r121)
-source("allFit.R")
+source("../R/allFit.R")
 ```
 
 Load data:
 
 ```{r getdat}
-dList <- load("data.RData")
+dList <- load("../data/ktdata.RData")
 ```
 
-Spaghetti plot: don't see much pattern other than (1) general
+First, do a general check of the data.
+In the spaghetti plot (lines for all individuals (`pid`)
+plotted on the same panel): don't see much pattern other than (1) general
 increasing trend; (2) quantized response values (`table(dth$Estimate)`
-or `unique(dth$Estimate)` also show this); (3) skewed residuals
+or `unique(dth$Estimate)` also show this); (3) skewed residuals.
 
+
+```{r spaghett1,warning=FALSE}
+(p0 <- ggplot(dth,aes(Actual,Estimate))+
+ geom_point()+
+ ## lines by pid; lighten lines slightly
+ geom_line(aes(group=factor(pid)),alpha=0.4)+  
+ stat_summary(fun.y=mean,geom="line",colour="red",lwd=1.5))  ## add mean line
+```
+
+Check all unique values of `Estimate`:
 ```{r usort}
 sort(unique(dth$Estimate))
 ```
 
-```{r spaghett1,warning=FALSE}
-(p0 <- ggplot(dth,aes(Actual,Estimate))+geom_point()+
-    geom_line(aes(group=factor(pid)))+
-    stat_summary(fun.y=mean,geom="line",colour="red",lwd=2))
-```
-Emphasize distribution:
+Emphasize distribution: `stat_sum` shows the number of overlapping points
+at a location.
 ```{r sumplot}
-ggplot(dth,aes(x=Actual,y=Estimate))+stat_sum(aes(size=..n..),alpha=0.5)+
+ggplot(dth,aes(x=Actual,y=Estimate))+
+    stat_sum(aes(size=..n..),alpha=0.5)+
     scale_size_continuous(range=c(2,8))
 ```
 
-```{r fit1,message=FALSE,results="hide"}
+We can fit this model OK, but we get a correlation of 100% between
+the slope and intercept:
+```{r fit1,message=FALSE}
+(f1 <- lmer(Estimate~Actual+(Actual|pid),data=dth,REML=FALSE))
+```    
+
+A utility function for extracting just the correlation:
+```{r getcor}
 getcor <- function(object) attr(VarCorr(object)[[1]],"correlation")[2,1]
-f1 <- lmer(Estimate~Actual+(Actual|pid),data=dth,REML=FALSE)
 getcor(f1)
 ```
 
-logging (there are zero values: it's a bit sloppy, but I'm just
-going to use `log(0.5+x)` as the response -- `log(1+x)` may look
-even better ...) helps a great
-deal with the fit (no longer singular), and with the Q-Q
-
-```{r sumplot2}
-ggplot(dth,aes(x=Actual,y=log(0.5+Estimate)))+stat_sum(aes(size=..n..),alpha=0.5)+
-    scale_size_continuous(range=c(2,8))+
-    geom_smooth(method="lm")
+The Q-Q plot of the residuals is pretty horrible:
+```{r}
+qqmath(f1)
 ```
+
+It occurred to me that one way to fix the problem was to
+log-transform the data (because there are zero values, I'm just
+going to use `log(0.5+x)` as the response -- this is a bit
+sloppy/*ad hoc*; `log(1+x)` may look
+even better ...) This helps a great
+deal with the fit (it's no longer singular), and with the Q-Q plot.
+
+Plot the data on this scale: add individual regression lines
+```{r sumplot2,message=FALSE}
+ggplot(dth,aes(x=Actual,y=log(0.5+Estimate)))+
+    stat_sum(aes(size=..n..),alpha=0.5)+
+    scale_size_continuous(range=c(2,8))+
+    geom_smooth(method="lm",
+                aes(group=pid),
+                se=FALSE,
+                ## 'alpha' refers to the transparency of the
+                ##  confidence ribbon (which we have suppressed
+                ##  via se=FALSE); use adjustcolor() (from base R)
+                ##  to make the line color partly transparent
+                colour=adjustcolor("gray",alpha=0.3))+
+    geom_smooth(method="lm",alpha=0.6) ## overall linear regression line
+```
+The message (`Don't know how to automatically pick scale ...`) is
+a false positive caused by using labelled variables (from the `Hmisc` package)
 
 ```{r fit1L}
 f1L <- lmer(log10(0.5+Estimate)~Actual+(Actual|pid),data=dth,REML=FALSE)
-VarCorr(f1L)
+(vc1L <- VarCorr(f1L))
 ```
 
-Q-Q plot shows the problem ...
+```{r fit1L_invis,echo=FALSE}
+vcratio <- sqrt(vc1L[[1]][2,2]/vc1L[[1]][1,1])
+```
+The intercept variance is pretty small (`r round(100*vcratio)`% of the 
+slope variance, but bounded.
+
+The Q-Q plot is much better (although still slightly left-skewed):
 
 ```{r qq,fig.width=10}
-grid.arrange(qqmath(f1),qqmath(f1L),nrow=1)
+grid.arrange(qqmath(f1,main="Original"),qqmath(f1L,main="Log scale"),nrow=1)
 ```
 
-and helps the general residual plot
-
+Seems to help a bit with the residual vs. fitted plot:
 ```{r diag,fig.width=10}
-grid.arrange(plot(f1,type=c("p","smooth")),
-             plot(f1L,type=c("p","smooth")),nrow=1)
+grid.arrange(plot(f1,type=c("p","smooth"),main="Original"),
+             plot(f1L,type=c("p","smooth"),main="Log scale"),nrow=1)
 ```
 
-Double-check that the same thing happens with `lme4.0`
+(Optionally) double-check that the same thing happens with `lme4.0`,
+the old stable version (use `::` to use the `lme4.0` functions
+without actually loading the `lme4.0`
+package, which will conflict with the `lme4` package ...)
 
 ```{r otherfits}
 f2 <- lme4.0::lmer(Estimate~Actual+(Actual|pid),data=dth,REML=FALSE)
 attr(lme4.0::VarCorr(f2)[[1]],"correlation")[2,1]
+```
 
+Unfortunately, KT reported that for this problem it was important
+to fit on the original scale rather than the log scale -- we
+will double-check with all available optimizers to see if they
+all get to the same answer ...
+
+Fitting with all possible optimizers:
 ```{r allfits,results="hide",warning=FALSE,cache=TRUE}
 aa <- allFit(f1)
 ss <- summary.allfit(aa)
 ```
 
-results: warning for L-BFGS-B (which does indeed fail); all other
-results nearly identical (`nlminb` gives cor *slightly* <1) (only
+Results: warning for L-BFGS-B (which does indeed fail); all other
+results are nearly identical (`nlminb` gives cor *slightly* <1) (only
 sd/cor estimates shown; log-likelihoods and fixed effect estimates
 are consistent with this picture)
 (Facet and axis tick labels below are slightly wonky/need tweaking.)
@@ -100,7 +153,7 @@ L-BFGS-B fails completely (unusual error, missing value pops up in internal boun
 none of the other cases gives convergence warnings, which is slightly alarming since both versions of BOBYQA (`minqa` and `nloptr`) clearly fail, with NLL 50-100 log-likelihood units worse than the other fits ... I think the problem here is actually something in `blmer` where the warnings fail to get stored properly ...
 
 
-```{r blmefit}
+```{r blmefit,cache=TRUE}
 ## hack to refit lmer as glmer
 ff <- getCall(f1)
 ff[[1]] <- quote(blmer)
@@ -121,29 +174,35 @@ g0 %+% melt(cbind(ss3$sdcor,NLL=-2*(ss3$ll-max(ss3$ll))))
 
 ## Visualizing likelihood surface
 
-
 ```{r slicecalc,cache=TRUE,results="hide"}
-rmat <- matrix(c(0,1,-0.2,0.2,0,1),byrow=TRUE,ncol=2,
-               dimnames=list(paste0("theta",1:3),c("lwr","upr")))
+## set up ranges for each parameter
+(rmat <- matrix(c(0,1,
+                 -0.2,0.2,
+                 0,1),byrow=TRUE,ncol=2,
+               dimnames=list(paste0("theta",1:3),c("lwr","upr"))))
+## extract deviance function
 dd1 <- update(f1,devFunOnly=TRUE)
+## extract theta parameters from the fit
 pp1 <- getME(f1,"theta")
+## compute 2D likelihood 'slices' for each pair of parameters
+##  (*not* profiles, which would be much more expensive)
 s2D.1 <- bbmle:::slice2D(pp1,dd1,
                        tranges=rmat)
-##
+## do the same for the blme fit:
 dd3 <- update(f3,devFunOnly=TRUE)
-pp3 <- getME(aa3[[2]],"theta")  ## use a version that actually worked
+pp3 <- getME(aa3[[2]],"theta")  ## use an optimizer that actually worked
 s2D.3 <- bbmle:::slice2D(pp3,dd3,
                        tranges=rmat)
 ```
 
 Left plot, `lmer`; right, `blmer`.
 
-
 ```{r sploms,fig.width=10}
-grid.arrange(splom(s2D.1),splom(s2D.3),nrow=1)
+grid.arrange(splom(s2D.1,main="lmer"),splom(s2D.3,main="blmer"),nrow=1)
 ```
 
-Zoom in a bit:
+It still looks like the `blmer` parameters are on the boundary, 
+but if we zoom in a bit we can see that they're not:
 
 ```{r slicecalc2,cache=TRUE,results="hide"}
 rmat2 <- matrix(c(0,1,-0.1,0.1,0,0.1),byrow=TRUE,ncol=2,
@@ -154,7 +213,25 @@ s2D.3b <- bbmle:::slice2D(pp3,dd3,
                        tranges=rmat2)
 
 ```{r sploms2,fig.width=10}
-grid.arrange(splom(s2D.1b),splom(s2D.3b),nrow=1)
+grid.arrange(splom(s2D.1b,main="lmer"),splom(s2D.3b,main="blmer"),nrow=1)
+```
+
+We can plot with contours, which is pretty ...
+```{r sploms3}
+splom(s2D.3b,contour=TRUE)
+```
+
+But the weird parts of these contours are nowhere near the relevant
+confidence intervals (this should be built into to the `slice` plotting
+method instead of having to be done by hand, but for now ...)
+```{r}
+ss0 <- s2D.3b$slices[[1]][[2]]  ## pull out (theta1,theta2) surface
+ss1 <- with(ss0,list(x=unique(x),y=unique(y),z=matrix(z,nrow=31)))
+with(ss1,contour(x,y,z-min(z),col="gray"))
+with(ss1,contour(x,y,z-min(z),
+                 levels=qchisq(c(0.9,0.95),2),
+                 col=c(2,4),labels=c("90","95"),
+                 add=TRUE))
 ```
 
 Visualizations could use a lot of work (scale bar and/or

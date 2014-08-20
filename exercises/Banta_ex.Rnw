@@ -1,0 +1,1129 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage{graphicx}
+%\usepackage[lmargin=3cm,rmargin=3cm,tmargin=3cm,bmargin=3cm]{geometry}
+\usepackage{subfig}
+\usepackage{paralist}
+\usepackage{natbib}
+\usepackage{color}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[utf8]{inputenc}
+\newcommand{\correct}[1]{{\color{red}#1\color{black}}}
+\newcommand{\todo}[1]{{\color{red}{\bf #1}\color{black}}}
+\newcommand{\code}[1]{{\tt #1}}
+\usepackage{fancyvrb}
+\VerbatimFootnotes
+\bibliographystyle{chicago}
+\begin{document}
+%\linenumbers
+\title{GLMMs LAB: gene-by-environment interaction in total fruit production of wild populations of \emph{Arabidopsis thaliana}}
+\author{Ben Bolker and Hank Stevens}
+\maketitle
+%\SweaveOpts{eval=TRUE, echo=TRUE, results=verbatim, eps=FALSE,prefix=FALSE, include=FALSE, keep.source=TRUE}
+%\SweaveOpts{eps=FALSE,prefix=FALSE,keep.source=TRUE,include=FALSE}
+
+<<utils, echo=FALSE, eval=FALSE>>=
+## leftover from Sweave version
+## setwd("~/Documents/Projects/Mixed Models/GLMM")
+options(width=80, contrasts=c("contr.treatment", "contr.poly"), continue=" ",
+        SweaveHooks=list(fig=function() par(bty="l",las=1)))
+### Load the \code{lme4} package (utility functions to unload packages when switching to the other)
+if (require(cacheSweave)) {
+  setCacheDir("banta_trondheim_cache")
+}
+@ 
+
+<<knitr, echo=FALSE>>=
+library(knitr)
+opts_chunk$set(tidy=FALSE)
+
+@
+
+\section{Introduction}
+This lab is a variant of the (revised/in revision) supplement by Bolker \emph{et al.}
+of \cite{bolker_generalized_2009}.
+
+Spatial variation in nutrient availability and herbivory is likely to cause population differentiation and maintain genetic diversity in plant populations. Here we measure the extent to which mouse-ear cress (\emph{Arabidopsis thaliana}) exhibits population and genotypic variation in their responses to these important environmental factors. We are particularly interested in whether these populations exhibit nutrient mediated \emph{compensation}, where higher nutrient levels allow individuals to better tolerate herbivory. We use GLMMs to estimate the effect of nutrient levels on tolerance to herbivory in \emph{Arabidopsis thaliana} (fixed effects), and the extent to which populations vary in their responses (variance components)\footnote{Data and context are provided courtesy of J. Banta and M. Pigliucci, State University of New York (Stony Brook).}. 
+
+In this example, we step deliberately through the process of model building and analysis.  The primary approach uses
+\code{glmer} from the \code{lme4} package to analyze
+the data as a lognormal-Poisson hierarchical model, 
+but we also use other approaches.
+
+Load packages:
+<<libs,message=FALSE>>=
+library(lme4)
+library(bbmle) ## for AICtab
+library(coefplot2)
+library(plyr)
+library(reshape2)
+library(gridExtra)
+library(MCMCglmm)
+library(ggplot2); theme_set(theme_bw())
+source("../R/glmm_funs.R") ## utility functions
+@ 
+
+Later we will also load the \code{glmmADMB} package, but there
+are conflicts between some of its methods and \code{lme4}, so
+we will until we really need it.
+
+\section{The data set}
+
+The response variable is the number of fruits
+(i.e. seed capsules) per plant. The number of fruits produced by an
+individual plant (the experimental unit) is a
+function of fixed effects, including nutrient levels (low \emph{vs.}
+high), simulated herbivory (none \emph{vs.} apical meristem damage),
+region (Sweden, Netherlands, Spain), and interactions among
+these. Fruit number was also a function of random effects including
+both the population and individual genotype. Because
+\emph{Arabidopsis} is highly selfing, seeds of a single individual
+served as replicates of that genotype. The data also include nuisance
+variables, including the placement of the plant in the greenhouse, and
+the method used to germinate seeds. These were estimated as fixed
+effects but interactions were excluded.
+
+Load the data set and make sure that each variable 
+is appropriately designated as numeric or factor (i.e. categorical variable). 
+<<getdata>>=
+dat.tf <- read.csv("../data/Banta_TotalFruits.csv")
+str(dat.tf)
+@ 
+The \code{X}, \code{gen}, \code{rack} and \code{nutrient} variables are
+coded as integers, but we want them to be factors: we coud either
+redo the \code{read.csv} command with \code{colClasses} set, or
+set the variables to factors by hand.
+\begin{itemize}
+\item{We use \code{transform()}, which operates within the data set,
+to avoid typing lots of commands like \verb!dat.tf$rack <- factor(dat.tf$rack)!}
+\item{At the same time, we reorder the clipping variable so that
+  \code{"unclipped"} is the reference level: we could also have
+  used \code{relevel(amd,"unclipped")}}
+\end{itemize}
+<<transf>>=
+dat.tf <- transform(dat.tf,
+                    X=factor(X),
+                    gen=factor(gen),
+                    rack=factor(rack),
+                    nutrient=factor(nutrient),
+                    amd=factor(amd,levels=c("unclipped","clipped")))
+@                  
+\footnote{There can be a tradeoff between clarity and
+  comprehension.  More laboriously but perhaps more clearly, we could
+  have made the same changes to the integer-coded factors as follows:
+<<oldway,eval=FALSE>>=
+dat.tf$X <- factor(dat.tf$X)
+dat.tf$gen <- factor(dat.tf$gen)
+dat.tf$rack <- factor(dat.tf$rack)
+dat.tf$nutrient <- factor(dat.tf$nutrient)
+@   
+I find the code with \code{transform} clearer, but you should
+use whatever form makes more sense to you (and is easier to
+understand when you come back to the code later).}
+
+The above output shows that the data include,
+\begin{compactdesc}
+\item[\code{X}~] observation number.p
+\item[\code{reg}~] a factor for region (Netherlands, Spain, Sweden).
+\item[\code{popu}~] a factor with a level for each population.
+\item[\code{gen}~] a factor with a level for each genotype.
+\item[\code{rack}~] a nuisance factor for one of two greenhouse racks.
+\item[\code{nutrient}~] a factor with levels for minimal or additional nutrients.
+\item[\code{amd}~] a factor with levels for no damage or simulated herbivory (apical meristem damage; we will sometimes refer to this as ``clipping'')
+\item[\code{status}~] a nuisance factor for germination method.
+\item[\code{total.fruits}~] the response; an integer count of the number of fruits per plant
+\end{compactdesc}
+
+Now we check replication for each genotype (columns) within each population (rows).
+
+{\small
+<<reps>>=
+(reptab <- with(dat.tf, table(popu, gen)))
+@ 
+}
+
+\textbf{Exercise}: this mode of inspection is OK for this data set
+but might fail for much larger data sets or for more levels of nesting.  See if you can think of some
+other numerical or graphical methods for inspecting the structure of
+data sets.  For example,
+\begin{itemize}
+\item \code{plot(reptab)} gives a \emph{mosaic plot}
+  of the two-way table; examine this, see if you can figure out how to interpret
+  it, and decide whether you think it might be useful
+\item try the commands \verb+colSums(reptab>0)+ and \verb+table(colSums(reptab>0))+
+  (and the equivalent for \code{rowSums}) and figure out what they are telling you.
+\item ** Using this recipe, how would you compute the range of number of genotypes per treatment
+  combination?
+\end{itemize}
+
+This reveals that we have only 2--4 populations per region and 2--3 genotypes per population. However, we also have 2--13 replicates per genotype per treatment combination (four unique treatment combinations: 2 levels of nutrients by 2 levels of simulated herbivory). 
+Thus, even though this was a reasonably large experiment (625 plants), there were a very small number of replicates with which to estimate variance components at the region level: we are going to ignore region (although we could alternatively treat it as a fixed effect, while still including population as a random effect).
+
+We have only two random effects (population, individual), and 
+so Laplace or Gauss-Hermite Quadrature (GHQ) should suffice, rather than requiring more complex methods. However, we will have to deal with overdispersion.
+
+\section{Look at overall patterns in the data}
+
+I usually like to start with a relatively simple overall plot of the data,
+disregarding the random factors, just to see what's going on. 
+For reasons to be discussed below, we choose to look at the data
+on the log (or $\log(1+x)$ scale.  Let's plot either box-and-whisker plots
+(useful summaries)
+or dot plots (more detailed, good for seeing if we missed anything):
+
+<<latticeplots1>>=
+bwplot(log(1+total.fruits)~interaction(nutrient,amd)|reg,data=dat.tf)
+dotplot(log(1+total.fruits)~interaction(nutrient,amd)|reg,data=dat.tf)
+@ 
+
+\code{ggplot} will do just about the same thing.  Its \verb+stat_sum+ operator
+is useful for displaying duplicated points \ldots
+<<ggplots1>>=
+qplot(interaction(nutrient,amd),log(1+total.fruits),
+      data=dat.tf,geom="boxplot")+facet_wrap(~reg,nrow=1)
+qplot(interaction(nutrient,amd),log(1+total.fruits),
+      data=dat.tf)+facet_wrap(~reg,nrow=1)+stat_sum()
+@ 
+
+\textbf{Exercise} generate these plots and figure out how they work before continuing.
+Try conditioning/faceting on population rather than region: for \code{ggplot} you might
+want to take out the \code{nrow=1} specification.  For extra credit, reorder the
+subplots by overall mean fruit set and/or colour the points according to the region they
+come from \ldots
+
+
+\section{Choose an error distribution; graphical checks}
+
+The data are non-normal in principle (i.e., count data, so our first guess would be a Poisson distribution). If we transform total fruits with the canonical link function (log), 
+we hope to see relatively homogeneous variances across categories and groups.
+
+First we define a new factor that represents every combination of genotype
+and treatment (nutrient $\times$ clipping) treatment, and sort it in
+order of increasing mean fruit set.
+<<within>>=
+## use within() to make multiple changes within a data frame
+dat.tf <- within(dat.tf,
+                 {
+                   gna <- interaction(gen,nutrient,amd)
+                   gna <- reorder(gna, total.fruits, mean)
+                 })
+@ 
+
+Now we use the \code{bwplot} function in the \code{lattice} package to
+generate a box-and-whisker plot of $\log(\mbox{fruits}+1)$.
+<<bwplots,  fig.width=10, fig.height=5>>=
+bwplot(log(total.fruits + 1) ~  gna,  
+             data=dat.tf, 
+             scales=list(x=list(rot=90))  ## rotate x-axis labels
+             )
+@
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.9\linewidth]{figure/bwplots}
+  \caption{Box-and-whisker plots of log(total fruits+1) by treatment combinations and genotypes reveal heterogeneity of variances across groups.}
+  \label{fig:bw}
+\end{figure}
+\footnote{
+  Alternatively, one can also use the \code{ggplot2} package to draw these
+  graphs.  In this case, we rotate the graph 90 degrees
+  (using \verb+coord_flip()+) rather than rotating the $x$-axis labels \ldots
+<<ggrotate,eval=FALSE>>=
+ggplot(dat.tf,aes(x=gna,y=log(1+total.fruits)))+geom_boxplot()+coord_flip()+
+  theme_bw()
+@ 
+}
+
+Taking the logarithm of total fruit (or in this case $\log(1+\mbox{fruit})$ to avoid taking the log of zero) should stabilize the variance \citep{McCullaghNelder1989}, but this does not seem to be the case (Figure \ref{fig:bw}). 
+The variance actually seems to decline slightly in the largest groups, but it's a bit hard to see.
+
+We could also calculate the variance  for each genotype $\times$ treatment combination and provide a statistical summary of these variances.
+<<checklambda>>=
+grpVarL <- with(dat.tf, tapply(log(1+total.fruits), 
+                               list(gna), var) )
+summary(grpVarL)
+@ 
+This reveals substantial variation among the sample variances on the transformed data.  In addition to heterogeneous variances across groups, Figure \ref{fig:bw} reveals many zeroes in groups, and some groups with a mean and variance of zero, further suggesting we need a non-normal error distribution, and perhaps something other than a Poisson distribution. 
+
+Figure \ref{fig:bw} also indicates that the mean ($\lambda$ of the Poisson distribution) is well above 5 (i.e. in general the center of each group is greater than $\log(6)=1.8$), suggesting that PQL may be appropriate, if it is the only option available. 
+We could calculate $\lambda$ for each genotype $\times$ treatment combination and provide a statistical summary of each group's $\lambda$.
+<<checklambda2>>=
+grpMeans <- with(dat.tf, tapply(total.fruits, list(gna), mean))
+summary(grpMeans)
+@ 
+The average  by-group $\bar{\lambda}$ is  $\Sexpr{round(mean(grpMeans))}$; the  median is $\approx \Sexpr{round(median(grpMeans))}$; and at least one group has $\lambda=0$ (i.e., complete absence of fruit set for that genotype $\times$ treatment combination).
+
+A core property of the Poisson distribution is that the variance is equal to the mean. A simple diagnostic is a plot of the group variances against the group means: 
+\begin{itemize}
+\item Poisson-distributed data will result in a linear pattern with slope=1
+\item as long as the variance is generally greater than the mean, we call 
+  the data \emph{overdispersed}. Overdispersion comes in various forms:
+  \begin{itemize}
+  \item a linear mean-variance relationship with $\mbox{Var} = \phi \mu$ (a line through
+    the origin) with $\phi>1$ is called a \emph{quasi-Poisson} pattern 
+    (this term describes the mean-variance
+    relationship, not any particular proability distribution); we can implement it 
+    statistically via quasilikelihood \citep{venables_modern_2002}
+    or by using a particular parameterization of the negative binomial
+    distribution (``NB1'' in the terminology of \cite{hardin_generalized_2007})
+  \item a semi-quadratic pattern, $\mbox{Var}=\mu(1+\alpha \mu)$ or $\mu(1+\mu/k)$, is
+    characteristic of overdispersed data that is driven by underlying heterogeneity among
+    samples, either the negative binomial (gamma-Poisson) or the lognormal-Poisson
+    \citep{elston_analysis_2001}; we will see below how to fit data following these distributions
+  \end{itemize}
+\end{itemize}
+
+We've already calculated the group (genotype $\times$ treatment) means, we calculate 
+the variances in the same way:
+<<logvar>>=
+grpVars <- with(dat.tf, 
+                tapply(total.fruits, 
+                       list(gna), var) )  ## variance of UNTRANSFORMED data
+@ 
+\footnote{Here are two alternative ways to compute the mean
+  and variance of total fruits by group, using \code{plyr::ddply}
+  and \code{reshape2::cast} (\code{aggregate}, from base R, works too):
+<<altreshape,results="hide">>=
+ddply(dat.tf,"gna",
+      function(x) with(x,data.frame(mean=mean(total.fruits),var=var(total.fruits))))
+recast(subset(dat.tf,
+              select=c(gna,total.fruits)),
+       id.var=1,
+       gna~...,
+       fun.agg=function(x) c(mean=mean(x),var=var(x)))
+@ 
+}
+
+We can get approximate estimates of the quasi-Poisson (linear)
+and negative binomial (linear/quadratic) pattern using \code{lm}.
+(The \code{-1} in the formulas below
+specifies a model with the intercept set to zero.
+We have to do some rearranging in the second case,
+and use \code{I()} to specify that we really mean to
+square the group variables
+<<square>>=
+lm1 <- lm(grpVars~grpMeans-1)  ## `quasi-Poisson' fit
+phi.fit <- coef(lm1)
+lm2 <- lm((grpVars-grpMeans)~I(grpMeans^2)-1)
+k.fit <- 1/coef(lm2)
+## alternatively (more understandable but computationally harder):
+## nls1 <- nls(grpVars~grpMeans*(1+grpMeans/k),
+##    start=list(k=1))
+@ 
+ 
+It's easy enough to plot the means vs. variances and the fitted relationships;
+we also add a non-parametric \code{loess} fit:
+<<logvarplot>>=
+plot( grpVars ~ grpMeans, xlab="group means", ylab="group variances" )
+abline(c(0,1), lty=2)
+text(105,500,"Poisson")
+curve(phi.fit*x, col=2,add=TRUE)
+## bquote() is used to substitute numeric values 
+##   in equations with symbols
+text(110,3900,
+     bquote(paste("QP: ",sigma^2==.(round(phi.fit,1))*mu)),
+     col=2)
+curve(x*(1+x/k.fit),col=4,add=TRUE)
+text(104,7200,paste("NB: k=",round(k.fit,1),sep=""),col=4)
+## loess fit
+Lfit <- loess(grpVars~grpMeans)
+mvec <- 0:120
+lines(mvec,predict(Lfit,mvec),col=5)
+@ 
+
+\footnote{\code{ggplot} solution:
+<<ggsol>>=
+ggplot(data.frame(grpMeans,grpVars),
+       aes(x=grpMeans,y=grpVars))+geom_point()+
+  geom_smooth(colour="blue",fill="blue")+
+  geom_smooth(method="lm",formula=y~x-1,colour="red",fill="red")+
+  stat_function(fun=function(x) x*(1+x/k.fit),
+              colour="purple",fill="purple")
+@ 
+}
+
+These fits are not rigorous statistical tests --- they violate
+a variety of assumptions of linear regression (e.g. constant
+variance, independence), but they are good enough to give
+us an initial guess about what distributions we should use.
+
+\textbf{Exercise} 
+\begin{itemize}
+\item compare a simple quadratic fit to the data (i.e., without
+  the linear part) with the negative binomial and quasipoisson fits.
+\item ** Draw a plot to suggest whether one might be able to 
+  stabilize the variance of the data by $\log(1+x)$-transforming the data.
+\end{itemize}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.6\linewidth]{figure/logvarplot}
+  \caption{The variance-mean relation of Poisson random variables should exhibit a slope of approximately one (dashed line). In contrast, these data reveal a slope of much greater than one (the wedge or cornupia shape is expected for small Poisson samples, but the slope here is much, much greater than 1).
+  The coloured lines show estimated mean-variance relationships
+  for quasi-Poisson (or negative-binomial ``type I'', \cite{hardin_generalized_2007}) [red]:
+  $V=\phi \mu$;
+  negative binomial or lognormal-Poisson \citep{elston_analysis_2001} [blue]: $V=\mu(1+\mu/k)$ or
+  $V=\mu(1+\mu \cdot (\exp(\sigma^2)-1))$.
+}
+\label{fig:VM}
+\end{figure}
+
+We find that the group variances increase with the mean much more rapidly than expected under the Poisson distribution. This indicates that we need to account
+for overdispersion in the model.
+@ 
+
+\subsection{Plotting the responses \emph{vs.} treatments}
+We would like to plot the response by treatment effects, to make sure there are no surprises.
+<<plot1>>=
+stripplot(log(total.fruits+1) ~ amd|popu, dat.tf, 
+                groups=nutrient, auto.key=list(lines=TRUE, columns=2),
+                strip=strip.custom(strip.names=c(TRUE,TRUE)),
+                type=c('p','a'), layout=c(5,2,1),
+                scales=list(x=list(rot=90)), main="Panel: Population")
+@ 
+There seems to be a consistent nutrient effect (different intercepts), and perhaps a weaker clipping effect (negative slopes) --- maybe even some compensation (steeper slope for zero nutrients, Fig. \ref{fig:plot1}).
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.6\linewidth]{figure/plot1}
+  \caption{Interaction plots of total fruit response to nutrients and clipping, by population. Different lines connect population means of log-transformed data for different nutrient levels.}
+  \label{fig:plot1}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.6\linewidth]{figure/plot2}
+  \caption{Interaction plots of total fruit response to clipping, for each genotype (lines and colors). Different panels show different nutrient levels.}
+  \label{fig:plot2}
+\end{figure}
+Because we have replicates at the genotype level, we are also able to examine the responses of genotypes (Fig. \ref{fig:plot2}).
+<<plot2>>=
+stripplot(log(total.fruits+1) ~ amd|nutrient, dat.tf, 
+                groups=gen, 
+                strip=strip.custom(strip.names=c(TRUE,TRUE)),
+                type=c('p','a'), ## points and panel-average value -- 
+                                 ## see ?panel.xyplot
+                scales=list(x=list(rot=90)),
+                main="Panel: nutrient, Color: genotype")
+@ 
+\footnote{
+\code{ggplot} versions:  
+<<ggplot2,eval=FALSE>>=
+ggplot(dat.tf,aes(x=amd,y=log(total.fruits+1),colour=nutrient))+
+  geom_point()+
+  ## need to use as.numeric(amd) to get lines
+  stat_summary(aes(x=as.numeric(amd)),fun.y=mean,geom="line")+
+  theme_bw()+opts(panel.margin=unit(0,"lines"))+
+  facet_wrap(~popu)
+ggplot(dat.tf,aes(x=amd,y=log(total.fruits+1),colour=gen))+
+  geom_point()+
+  stat_summary(aes(x=as.numeric(amd)),fun.y=mean,geom="line")+
+  theme_bw()+
+  ## label_both adds variable name ('nutrient') to facet labels
+  facet_grid(.~nutrient,labeller=label_both)
+@ 
+}
+
+There appears to be a consistent nutrient effect among genotypes (means in right panel higher than left panel), but the variation increases dramatically, obscuring the clipping effects and any possible interaction (Fig. \ref{fig:plot2}).
+
+\section{Fitting group-wise GLMs}
+Another general starting approach is to fit GLMs to each group of data separately,
+equivalent to treating the grouping variables
+as fixed effects.
+This should result in reasonable variation among treatment effects. 
+We first fit the models, and then examine the coefficients.
+<<GLMfits>>=
+glm.lis <- lmList(total.fruits~nutrient*amd|gen,data=dat.tf,
+                  family="poisson")
+@ 
+\footnote{The versions of \code{lmList} in the \code{lme4} and
+  \code{nlme} packages are different (only the one in 
+  \code{lme4} has a \code{family} argument for running GLMs).
+  If \code{find("lmList")} shows a version from \code{nlme}, use
+  \code{detach("package:nlme")} to get rid of it (you may
+  need to detach the upstream package that loaded it first), or use
+  \code{lme4::lmList}.
+}
+
+There are a variety of ways to examine the different coefficients. 
+We have written a function to save all the coefficients in a data frame, 
+order the data frame by rank order of one of the coefficients, 
+and then plot all the cofficients together (see \citep{pinheiro_mixed-effects_2000});
+it was loaded when we \code{source()}ed the file \verb+glmm_funs.R+.
+
+Plot the list of models created above:
+<<GLMlis>>=
+plot(glm.lis,scale=list(x=list(relation="free")))
+@ 
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.6\linewidth]{figure/GLMlis}
+  \caption{Model coefficients for GLM fits on each genotype.}
+  \label{fig:glmcoefs}
+\end{figure}
+Three genotypes (5, 6, 34) have extreme coefficients (Fig. \ref{fig:glmcoefs}). 
+
+A mixed model assumes that the underlying random effects are normally distributed, although we shouldn't take these outliers \emph{too} seriously at this point --- 
+we are not actually plotting the random effects, or even estimates of random effects (which are not themselves guaranteed to be normally distributed),
+but rather separate estimates for each group. 
+
+Create a plotting function for Q-Q plots of these coefficients to visualize the departure from normality (Figure \ref{fig:glmlisqq}):
+<<qqmath1>>=
+qqmath(glm.lis)
+@ 
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.8\linewidth]{figure/qqmath1}
+  \caption{Q-Q plots of model coefficients for GLM fits on each genotype.}
+  \label{fig:glmlisqq}
+\end{figure}
+We see that these extreme coefficients fall far outside a normal error distribution (Fig. \ref{fig:glmlisqq}).
+We shouldn't take these outliers \emph{too} seriously at this point --- we are not actually plotting the random effects, or even estimates of random effects, but rather separate estimates for each group.  Especially if these groups have relatively small sample sizes, the estimates may eventually be ``shrunk'' closer to the mean when we do the mixed model. It turns out that two out of three of the outlier genotypes have small sample sizes, although the third is near the maximum sample size:
+<<>>=
+gentab <- with(dat.tf,table(gen))
+summary(as.numeric(gentab))
+gentab[c("5","6","34")]
+@ 
+We should nonetheless take care to see if the coefficients for these genotypes from the GLMM are still outliers, and take the same precautions as we usually do for outliers. For example, we can look back at the original data to see if there is something weird about the way those genotypes were collected, or try re-running the analysis without those genotypes to see if the results are robust.\footnote{Other options such as weakening the distributional assumptions on the random effects (making them completely nonparametric or using a fatter-tailed distribution such as the Student $t$) are beyond the scope of this note, although they can be achieved via general-purpose tools such as WinBUGS or AD Model Builder.}
+
+\section{Fitting and evaluating the full GLMM}
+Now we (try to) build and fit a full model, using \code{glmer} in the \code{lme4} package\footnote{As of this writing, \code{glmer} and \code{lmer} are nearly synonymous: calling \code{lmer} with a \code{family} argument automatically hands off to \code{glmer} to run a GLMM.  This may change in the future, and using \code{glmer} makes it clearer that one is really trying to run a GLMM rather than a LMM.}. This model has random effects for all genotype and population $\times$ treatment random effects, and for the nuisance variables for the rack and germination method (\code{status}). (Given the mean-variance relationship we saw it's pretty clear that we are going to have to proceed eventually to a model with overdispersion, but we fit the Poisson model first for illustration.)
+<<full1,cache=TRUE>>=
+mp1 <- glmer(total.fruits ~ nutrient*amd +
+             rack + status +
+             (amd*nutrient|popu)+
+             (amd*nutrient|gen),
+             data=dat.tf, family="poisson")
+@ 
+This fits without any (apparent) problems --- the model converges without warnings. 
+
+We can use the Pearson residuals (i.e., $r_P = (y_i-u_i)/\sqrt{Var_i}$, where the variance is $\lambda$ and is therefore the fitted value for each observation) to assess overdispersion quantitatively,
+although it's really unnecessary in this case because the pattern (Figure~\ref{fig:VM}) is so obvious:
+if $r_{Pi}$ are the Pearson residuals and $d$ is the number of residual
+degrees of freedom, we want $\sum{r_{Pi}^2} \approx d$ --- or
+$\sum{r_{Pi}^2}/d \approx 1$, or more precisely,
+$\sum{r_{Pi}^2} \sim \chi^2_d$ \citep[but note warnings about applying this criterion for data with small sample means]{venables_modern_2002}.
+The $p$-value is so incredibly low that we'll compute its logarithm
+instead (if we don't, R just reports 0).
+We define a convenience function:
+<<overdisp>>=
+overdisp_fun(mp1)  
+@ 
+This shows that the data are (extremely) over-dispersed, given the model. 
+The \emph{deviance} of the model (in this case, a penalized version of
+$-2$ times the log-likelihood) gives a similar (also approximate for the
+purposes of inference)
+<<q.overdisp>>=
+deviance(mp1)
+@ 
+
+Now we add the observation-level random effect to the model to account
+for overdispersion \citep{elston_analysis_2001}:
+<<full2,cache=TRUE>>=
+mp2 <- update(mp1,.~.+(1|X))
+@ 
+The model takes much longer to fit (and gives warnings).
+
+We look just at the variance components.  In particular, if we look
+at the correlation matrix among the genotype random effects, we see
+a perfect correlation:
+<<corr>>=
+attr(VarCorr(mp2)$gen,"correlation")
+@ 
+
+The \code{printvc} is a utility function that prints the variance-covariance
+matrices along with an equals sign (=) appended to any covariance component
+that corresponds to a perfect (or nearly perfect $\pm 1$ correlation:
+
+<<printvc>>=
+printvc(mp2)
+@ 
+
+We'll try getting rid of the correlations between clipping
+(\code{amd}) and nutrients, using \code{amd+nutrient} instead
+of \code{amd*nutrient} in the random effects specification
+(here it seems easier to re-do the model rather than 
+using \code{update} to add and subtract terms):
+<<full3,cache=TRUE>>=
+mp3 <- glmer(total.fruits ~ nutrient*amd +
+             rack + status +
+             (amd+nutrient|popu)+
+             (amd+nutrient|gen)+(1|X),
+             data=dat.tf, family="poisson")
+@ 
+
+<<printvc2>>=
+printvc(mp3)
+@ 
+Unfortunately, we still have perfect correlations among the random effects
+terms.
+
+For some models (e.g. random-slope models), it is possible to fit
+random effects models in such a way that the correlation between
+the different parameters (intercept and slope in the case of random-slope
+models) is constrained to be zero, by fitting a model
+like \verb!(1|f)+(0+x|f)!; unfortunately, because of the way \code{lme4} is set up,
+this is considerably more difficult with categorical predictors (factors).
+
+We have to reduce the model further in some way in order not
+to overfit (i.e., in order to \emph{not} have perfect $\pm 1$ correlations
+among random effects).  It looks like we can't allow both nutrients and
+clipping in the random effect model at either the population or the genotype
+level.  However, it's hard to know whether we should proceed with
+\code{amd} or \code{nutrient}, both, or neither in the model.  
+
+A convenient way to proceed if we are going to try fitting several
+different combinations of random effects is to fit the model with 
+all the fixed effects but only
+observation-level random effects, and then to use \code{update} to add
+various components to it:
+<<mpobs,cache=TRUE>>=
+mp_obs <- glmer(total.fruits ~ nutrient*amd +
+               rack + status +
+               (1|X),
+               data=dat.tf, family="poisson")
+@ 
+
+Now, for example, \verb!update(mp_obs,.~.+(1|gen)+(amd|popu))!
+fits the model with intercept random effects at the genotype level
+and variation in clipping effects across populations.
+\footnote{One can also model the interaction of categorical
+  predictors (such as clipping) with a random effect in a slightly more
+  restricted way, for example coding the \verb+(amd|popu)+ term
+  in the model above as \verb+(1|popu/amd)+ instead.  In effect,
+  we are treating the different \code{amd} levels as nested groups
+  within populations. This approach is slightly less flexible (for
+  example, one cannot have negative correlations between treatment
+  levels) but slightly easier computationally.  In this case, trying
+  to fit models with \code{amd} or \code{nutrient} nested within
+  population or genotype leads to zero variances for the lowest level --- in
+  other words, just as we concluded before, we don't have enough
+  power to detect variation in treatment effects among groups.}
+
+\textbf{Exercise} using \code{update}, fit the models with (1) 
+clipping variation at both genotype and population
+levels; (2) nutrient variation at both genotype and populations;
+using \code{printvc}, convince yourself that trying to fit
+variation in either clipping or nutrients leads to overfitting
+(perfect correlations).  Fit the model with only intercept variation
+at the population and genotype levels, saving it
+as \verb+mp4+; show that there is non-zero variance estimated at each of these levels
+(suggesting that we have not overfitted the model).
+
+
+<<mp4fit,echo=FALSE,cache=TRUE>>=
+mp4 <- update(mp_obs,.~.+(1|popu)+(1|gen))
+@ 
+
+In other words, while it's biologically plausible that there is
+some variation in the nutrient or clipping effect at the genotype 
+or population levels, with this 
+modeling approach we really don't have enough data to speak
+confidently about these effects.
+
+Let's check that \code{mp4} no longer incorporates overdispersion
+(the observation-level random effect should have taken care of it):
+<<>>=
+overdisp_fun(mp4)
+@ 
+Looks like we're fine now in terms of the residual $\chi^2$ criterion.
+
+Next we apply a function from \verb+glmm_funs.R+ 
+that defines a location-scale plot (Figure~\ref{fig:locscale}: this is plot \#3 in
+the standard \code{plot.lm} sequence). 
+The variance pattern is slightly alarming, with 
+higher variance for small fitted values.  Some but not all
+of this pattern is generated by zeros in the original data \ldots
+<<locscale>>=
+locscaleplot(mp4,col=ifelse(dat.tf$total.fruits==0,"blue","black"))
+@
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.9\linewidth]{figure/locscale}
+  \caption{Location-scale plot, with superimposed loess fit.
+  Zeros in the data are marked in blue.}
+  \label{fig:locscale}
+\end{figure}
+
+\section{Inference}
+Now that we have  a full model, we wish to make inferences regarding the parameters. 
+
+\newcommand{\daic}{\Delta \mbox{AIC}}
+
+\subsection{Comparing models with different random effects}
+
+We can draw a (somewhat ugly) plot of the estimated random effect
+standard deviations for our model (Figure~\ref{fig:sdplot}):
+<<sdplot,fig.keep="last">>=
+coefplot2(mp4,ptype="vcov",intercept=TRUE,cex.pts=1.5)
+@ 
+\code{glmer} does not return information about the standard errors
+or confidence intervals of the variance components, so these values
+are represented only as their point estimates. 
+
+As much as I like graphical presentations, in this case I have
+to admit that the printed representation given by \code{VarCorr(mp4)}
+or \code{printvc(mp4)} would be just as useful.
+
+\textbf{Exercise} Try it.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.9\linewidth]{figure/sdplot}
+  \caption{Estimated standard deviations for fitted model.}
+  \label{fig:sdplot}
+\end{figure}
+
+We can also inspect the random effects estimates themselves
+(in proper statistical jargon, these might be considered ``predictions''
+rather than ``estimates'' \citep{robinson_that_1991}:
+Figure~\ref{fig:reffplot}).
+We use the built-in \code{dotplot} method for the random effects
+extracted from \code{glmer} fits (i.e. \code{ranef(model,condVar=TRUE)}),
+which returns a list of plots, one for each random effect level in the
+model.  (We use a bit of trickery from the \code{gridExtra} package
+to arrange these plots on the page, and we ignore the observation-level
+random effects, which are returned as the \verb+$X+ component of
+the list of plots.)
+
+There is a hint of regional differentiation --- the
+Spanish populations have higher estimated/predicted fruit sets
+than the Swedish and Dutch populations.
+Genotype~34 again looks a little bit unusual.
+
+<<reffplot>>=
+## squash margins a bit ...
+pp <- list(layout.widths=list(left.padding=0, right.padding=0),
+           layout.heights=list(top.padding=0, bottom.padding=0))
+r1 <- ranef(mp4,condVar=TRUE)
+d1 <- dotplot(r1, par.settings=pp)
+print(grid.arrange(d1$gen,d1$popu,nrow=1))
+@ 
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.9\linewidth]{figure/reffplot}
+  \caption{Random effects estimates/predictions for 
+    model \code{mp4}}
+  \label{fig:reffs}
+\end{figure}
+
+
+\subsection{Comparing models with different fixed effects}
+
+What are the fixed effects?
+<<coefplot1,fig.keep="last">>=
+coefplot2(mp4)
+@ 
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.9\linewidth]{figure/coefplot1}
+  \caption{Fixed-effect parameter estimates ($\pm 1$ (thick line) and
+    $\pm 2$ (thin line) standard error) for the full model}
+  \label{fig:coefplot1}
+\end{figure}
+
+\verb+glmm_fun.R+ defines a convenience function, \code{daic()},
+that converts the AIC tables
+returned by \code{drop1} (which we will use momentarily)
+into $\daic$ tables:
+
+We use the \code{drop1} function to assess both the AIC difference
+and the likelihood ratio test between models.  Although the likelihood ratio test
+(and the AIC) are asymptotic tests, comparing fits between full and reduced models
+is still more accurate than the Wald (curvature-based) tests shown in the
+\code{summary} tables for \code{glmer} fits.%
+\footnote{In general you should \emph{not} explore both AIC- and LRT-based comparisons
+          when analyzing a models;
+          they represent different inferential approaches, and you should decide
+          before analyzing the model which you prefer, to avoid the temptation of
+          data snooping or ``cherry-picking'' (i.e., comparing the results of the
+                                               two approaches and choosing the ones you prefer).
+          Here we show both analyses for illustration.}
+
+
+<<drop1,cache=TRUE>>=
+(dd_AIC <- dfun(drop1(mp4)))
+@ 
+<<echo=FALSE>>=
+dd_AIC
+@ 
+<<drop1LRT,cache=TRUE>>=
+(dd_LRT <- drop1(mp4,test="Chisq"))
+@ 
+<<echo=FALSE>>=
+dd_LRT
+@ 
+
+On the basis of these comparisons, there appears 
+to be a very strong effect of rack
+and weak effects of status and of the interaction term.
+Dropping the \code{nutrient:amd} interaction gives
+a (slightly) increased AIC
+($\daic=\Sexpr{round(dd_AIC$dAIC[4],1)}$), so the full model has the 
+best expected predictive capability (by a small margin).  On the other hand,
+the $p$-value is slightly above 0.05
+($p=\Sexpr{round(dd_LRT$`Pr(Chi)`[4],2)}$).
+
+At this point we remove the non-significant
+interaction term so we can test the main effects.
+\footnote{There is significant controversy
+over this point. Some researchers state that centering the input variables
+(in this case using \code{contr.sum} to change to ``sum to zero'' contrasts)
+will make the main effects interpretable even in the presence of the interaction term
+\cite{schielzeth_simple_2010}, while others say one
+should almost never violate the ``principle of marginality'' in this way
+\citep{venables_exegeses_1998}.  Dropping the interactions may be an
+appropriate way forward \citep{pinheiro_mixed-effects_2000}, although
+others say that dropping non-significant terms from models
+is almost never justified \citep{harrell_regression_2001,whittingham_why_2006} \ldots}
+(We don't worry about removing \code{status} because
+it measures an aspect of experimental design that
+we want to leave in the model whether it is significant or not.)
+
+Once we have fitted the reduced model,
+we can run the LRT via \code{anova}:
+<<mp6,cache=TRUE>>=
+mp5 <- update(mp4, . ~ . - amd:nutrient)
+anova(mp5,mp4)
+@ 
+
+We an also test all the reduced models:
+<<dropamdnut,cache=TRUE>>=
+(dd_AIC2 <- dfun(drop1(mp5)))
+(dd_LRT2 <- drop1(mp5,test="Chisq"))
+@ 
+In the reduced model, we find that both nutrients
+and clipping have strong effects, whether measured
+by AIC or LRT.
+
+If we wanted to be still more careful about our
+interpretation, we would try to relax the asymptotic assumption.
+In classical linear models, we would do this by doing
+$F$ tests with the appropriate denominator degrees of freedom.
+In ``modern'' mixed model approaches, we might try to use
+denominator-degree-of-freedom approximations such as the
+Kenward-Roger (despite the controversy over these approximations,
+they are actually available in the \code{doBy} package
+(see \url{www.warwick.ac.uk/statsdept/useR-2011/abstracts/290311-halekohulrich.pdf})), but they do not apply to GLMMs.
+
+We can do a parametric bootstrap comparison between nested models, but it
+is too computationally intensive to do lightly.
+<<eval=FALSE>>=
+library(doBy)
+pb1 <- PBrefdist(mp4,mp5)
+PBmodcomp(mp4,mp5,ref=pb1)
+@ 
+
+At this point, we could re-check our assumptions. 
+
+<<>>=
+overdisp_fun(mp5)  
+@ 
+
+If we did \code{locscaleplot(mp5)} we would see
+very much the same pattern as in Figure~\ref{fig:locscale}.
+
+In addition, we can check the normality of the random effects and find they are reasonable (Fig. \ref{fig:reN}).
+We use \code{ldply} from the \code{reshape} package to collapse the list of random effect values into a data
+frame (we might have to do something different if there were more than one random effect within each level,
+e.g. a model including \code{(nutrient|gen)}).  The fancy \code{panel} code in the figure adds a reference
+line to the Q-Q plot: see \code{?qqmath}.
+<<reN, >>=
+reStack <- ldply(ranef(mp5))
+qqmath( ~`(Intercept)`|.id, data=reStack, scales=list(relation="free"),
+              prepanel = prepanel.qqmathline,
+              panel = function(x, ...) {
+                panel.qqmathline(x, ...)
+                panel.qqmath(x, ...)
+            },
+              layout=c(3,1))
+@ 
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=.6\linewidth]{figure/reN}
+  \caption{Quantile-quantile plot of the genotype random effects of the final model.}
+  \label{fig:reN}
+\end{figure}
+
+\section{Conclusions}
+
+Our final model includes fixed effects of nutrients 
+and clipping, as well as the nuisance variables \code{rack} and \code{status};
+observation-level random effects to account for overdispersion;
+and variation in overall fruit set at the population and genotype levels.
+However, we don't (apparently) have quite enough information to estimate the
+variation in clipping and nutrient effects, or the correlation between them,
+at the genotype or population levels.  There is a strong overall positive effect
+of nutrients and a slightly weaker negative effect of clipping.
+The interaction between
+clipping and nutrients is only weakly supported (i.e. the $p$-value is not
+very small), but it is positive and about the same magnitude as the
+clipping effect, which is consistent 
+with the statement that ``nutrients cancel out the effect of herbivory''.
+To test this equivalence formally, we could set the analysis up as a one-way
+layout (with levels [\code{Nutrient1:Unclipped}, 
+\code{Nutrient1:Clipped}, 
+\code{Nutrient8:Clipped},
+\code{Nutrient8:Unclipped}]); the contrast between 
+\code{Nutrient1:Unclipped} and \code{Nutrient8:Clipped} would then
+test the hypothesis (see
+\url{http://glmm.wikidot.com/local--files/examples/culcita_glmm.pdf} for a
+similar example).
+
+\textbf{Exercise} 
+\begin{itemize}
+\item Re-do the analysis with \code{region} as a fixed effect.
+\item Re-do the analysis with a one-way layout as suggested above.
+\end{itemize}
+    
+\section{Alternative approaches}
+
+\subsection{glmmADMB}
+
+Our first alternative is the \code{glmmADMB} package,
+which uses an approach generally similar to \code{lme4}
+although its history and computational approach are very
+different.  The main advantage of \code{glmmADMB} is its
+flexibility; its main disadvantage is its slowness
+(although the package is under rapid development).
+
+Unfortunately, we have to juggle some package conflicts to
+load \code{glmmADMB} (and re-load \code{coefplot2}):
+<<jugglepkgs,message=FALSE>>=
+detach("package:coefplot2",unload=TRUE)
+detach("package:lme4",unload=TRUE) ## VarCorr() conflict
+library(glmmADMB)
+library(coefplot2)
+@ 
+
+\code{glmmADMB} can fit NB1 (\code{family="nbinom1"}) an NB2
+\code{family="nbinom"}) models; it can also fit zero-inflated
+models (with \code{zeroInflation=TRUE}).
+We run a batch file that fits NB1 and NB2, with and without zero-inflation,
+using models such as
+<<eval=FALSE>>=
+gnb2 <- glmmadmb(total.fruits ~ nutrient*amd +
+                                   rack + status,
+                                   random=~(amd*nutrient|gen)+
+                                   (amd*nutrient|popu),
+                                   data=dat.tf, family="nbinom")
+@ 
+Using \code{glmmADMB}, you can specify random effects separately
+as above, as in \code{nlme}, or in the same formula along with
+the fixed effects, as in \code{lme4}.
+
+<<>>=
+load("../data/Banta_glmmADMB_fits.RData")
+@ 
+
+The results are stored in a list called \code{fits}, with names
+\code{gnb[12][Z]} specifying NB type 1 or 2, without or with
+zero-inflation. (The \code{gnb1B} model will be described below.)
+
+<<>>=
+AICtab(fits)
+@ 
+
+It looks like NB1 is \emph{much} better than NB2 \ldots but zero-inflation
+isn't doing anything.
+
+<<gnbcoefs,fig.keep="last">>=
+coefplot2(fits[c("gnb1","gnb2")])
+@ 
+
+The parameters are slightly different (NB2 estimates a stronger interaction
+effect), but not really qualitatively different --- and we should go with
+the better-fitting model in any case.
+
+
+It doesn't get rid of the artifacts in the location-scale plot, though \ldots
+<<gnbresid>>=
+locscaleplot(fits$gnb1)
+@ 
+
+By default, \code{glmmADMB} estimates independent variances for all of the random
+effects.
+For the population level, it estimates zero variances for everything but the intercept;
+for the genotype level, it estimates zero variance for clipping --- but a non-zero
+variance for the clipping $\times$ nutrient interaction (which is a bit weird).
+<<>>=
+lapply(VarCorr(fits$gnb1),round,3)
+@ 
+
+We can instead look at the reduced model which includes
+only an intercept model for the population but allows
+variation in the effect of nutrients:
+<<>>=
+lapply(VarCorr(fits$gnb1B),round,3)
+@ 
+
+\subsection{MCMCglmm}
+
+I don't have time to go into the details here, but
+you can also use Bayesian approaches \ldots \code{MCMCglmm}
+is the easiest entry point into the Bayesian world, because
+it fits GLMMs in a fairly straightforward way (and it
+is very fast, by
+the standards of Bayesian MCMC approaches).
+By the way, MCMC stands for ``Markov chain Monte Carlo'' \ldots
+
+<<loadMCMCglmm>>=
+library(MCMCglmm)
+@ 
+
+Here's the model specification:
+<<modelspec,eval=FALSE>>=
+## use independent effects (idh); full covariance matrix (us) fails
+m2 <- MCMCglmm(total.fruits ~ nutrient*amd +
+         rack + status,
+         random=~idh(amd*nutrient):popu+idh(amd*nutrient):gen,
+         data=dat.tf, family="poisson",verbose=FALSE)
+@ 
+The fixed effect part should look familiar by now.
+The random effects part is a little bit different.
+This example fits the same RE model as fitted above:
+\code{idh} means to fit the various effects (clipping,
+nutrient, and their interaction, as specified by
+\code{amd*nutrient} independently; \verb+~us+ would instead
+fit the model with all possible covariances (if you try
+this you will see that it doesn't work \ldots). Other
+options are possible: see \code{MCMCglmm} or ask me.
+\code{MCMCglmm} automatically includes an observation-level
+random effect in all models, so we don't have to do 
+anything explicit to account for overdispersion.
+
+<<get_Bantaglmm>>=
+load("../data/Banta_MCMCglmm_fit.RData")
+summary(m2)
+@ 
+
+A certain amount of extra diagnostic checking is required
+for MCMC models.  The trace plot shows the samples taken over
+time.  These should look like white noise --- no pattern over
+time, and rapid variation.
+
+The fixed effect trace plots are an example of what
+trace plots \emph{should} look like:
+
+<<MCMCglmmtrace>>=
+xyplot(as.mcmc(m2$Sol),layout=c(3,3))
+@ 
+
+The variance parameters are an example of what
+the trace plots should \emph{not} look like (except
+for the \code{units} variable, which is the observation-level
+random effect).
+<<MCMCglmmvtrace>>=
+xyplot(as.mcmc(m2$VCV),layout=c(3,3))
+@ 
+In order to get reliable answers we should discard
+some of the variance terms.  However, for now we'll
+just quickly take a look at graphical output for
+the fixed effects and random effect variances:
+
+<<MCMCglmmcoefs,fig.keep="last">>=
+coefplot2(m2)
+@ 
+
+<<MCMCglmmvcoefs,fig.keep="last">>=
+coefplot2(m2,ptype="vcov",intercept=TRUE)
+@ 
+
+\subsection{via LMM approximation}
+
+<<reloadlme4>>=
+detach("package:glmmADMB")
+library(lme4)
+@ 
+After all that effort, would we have come to a qualitatively different answer
+in the ``usual way'', transforming the data to be approximately normal
+and using LMMs rather than GLMMs?
+
+<<nfit,cache=TRUE>>=
+lm1 <- lmer(log(1+total.fruits)~nutrient*amd+rack+status+(1|popu) + (1|gen),data=dat.tf)
+@ 
+
+The $\log(1+x)$  transform does a reasonably
+good job stabilizing the variance of the residuals (although
+the zeros in the data set still generate a funny artifact,
+with the ones creating a weaker but similar pattern), although
+the data are still not normal (thin-tailed, rather than fat-tailed;
+the values at the low end of the distribution are higher than
+expected and \emph{vice versa}).
+
+<<nfitdiag>>=
+op <- par(mfrow=c(1,2))
+locscaleplot(lm1,col=ifelse(dat.tf$total.fruits==0,"blue",
+                   ifelse(dat.tf$total.fruits==1,"purple","black")))
+
+r <- residuals(lm1)
+qqnorm(r)
+qqline(r,col=2)
+par(op)  ## restore Original Parameters
+@ 
+
+<<coefcmp>>=
+op <- par(mfrow=c(1,2))
+coefplot2(list(lm1,mp4))
+coefplot2(list(lm1,mp4),ptype="vcov",intercept=TRUE,xlim=c(0,1.5))
+par(op)
+@ 
+
+Experimenting with more complex RE models leads to similar conclusions \ldots
+
+<<junk,echo=FALSE, eval=FALSE>>=
+## playing around with LMMs some more
+
+## fit categorical vars as groups rather than 'effects'
+lm3 <- lmer(log(1+total.fruits)~nutrient*amd+rack+status+(1|popu/amd) + (1|gen/amd),data=dat.tf)
+## var of nested treatment groups == 0 (consistent)
+
+## try to compute adjusted AIC, compare
+## sum(log(dT(y)/dy))
+## http://www.unc.edu/courses/2006spring/ecol/145/001/docs/lectures/lecture18.htm
+## T(y)=log(1+y)
+## T'(y) = 1/(1+y)
+trans_adjust <- -2*sum(log(1/(1+dat.tf$total.fruits)))
+AIC(lm1)+trans_adjust
+AIC(mp4)  ## actually a much better fit ...
+AIC(mp4)+2*nrow(dat.tf)  ## even if we penalize for observation-specific random effects ...
+
+## *what* is a worse fit? looking at simulated distributions
+set.seed(101)
+s1 <- trunc(exp(unlist(simulate(lm1)))-1)
+s2 <- unlist(simulate(mp4))
+mval <- max(c(s1,s2))
+p1 <- as.numeric(prop.table(table(factor(s1,levels=0:mval))))
+p1[(max(s1)+1):length(p1)] <- NA
+p2 <- as.numeric(prop.table(table(factor(s2,levels=0:mval))))
+matplot(0:mval,cbind(p2,p1),type="s",col=1:2,lty=1)
+
+tfun <- function(x) { trunc(exp(x)-1) }
+s1 <- simulate(lm1,1000)
+summary(colMeans(tfun(as.matrix(s1))==0))
+
+s2 <- simulate(mp4,1000)
+cc2 <- colMeans(as.matrix(s2)==0)
+cc1 <- colMeans(tfun(as.matrix(s1))==0)
+
+mm2 <- apply(s2,2,max)
+mm1 <- apply(tfun(as.matrix(s1)),2,max)
+summary()
+
+
+summary(s1)
+plot(prop.table(unlist(simulate(mp4))))
+## about overparameterization
+
+## trying to fit instead via GLM with log link (get correct AIC?)
+lm2 <- glmer((1+total.fruits)~nutrient*amd+rack+status+(1|popu) + (1|gen),
+             family=gaussian(link="log"),data=dat.tf)
+
+## comparing fitted vs obs for both models
+ff <- rbind(data.frame(m="glmer",f=fitted(mp4),obs=dat.tf$total.fruits),
+            data.frame(m="lmer",f=exp(fitted(lm1))-1,obs=dat.tf$total.fruits))
+ggplot(ff,aes(x=f,y=obs,colour=m))+stat_sum(alpha=0.5)+theme_bw()
+@ 
+\bibliography{../glmm}
+
+\end{document}

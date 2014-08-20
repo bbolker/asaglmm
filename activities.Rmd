@@ -1,0 +1,58 @@
+
+## Extended examples
+
+### Tundra CO2 data
+
+* re-do analysis using a site-within-year variable
+* using `flexLambda`, fit an AR1 model (maybe skip data series with missing data?), compare to `lme` fit
+* investigate reported df (57) for `lme` models (see `R/calcDenDF.R`)
+* investigate temporal autocorrelation by fitting a model without autocorrelation and using `nlme::ACF` and `nlme::plot.ACF`
+* see if the heteroscedasticity problems shown in the example can be fixed by Yeo-Johnson transformations (`car::yjPower`)
+* implement parametric bootstrap, or some other 'advanced' method, to get corrected $p$ values
+* figure out what's going wrong with the profiles at the end.  See `R/kt_rep_example.Rmd` for the use of `slice2D`.
+* evaluate spatial structure in the residuals by using the lat/long variables in the data; draw maps of residuals, e.g.
+```{r fig.keep="none"}
+set.seed(1001)
+dd <- data.frame(x=runif(30),y=runif(30),z=rnorm(30))
+ggplot(dd,aes(x,y,alpha=abs(z)/max(abs(z)),
+              size=abs(z),colour=(z>0)))+
+       geom_point()
+```
+or use `akima::interpp` to interpolate the residual surface onto a grid (BMB can provide a version of the package).
+* see whether `glmmADMB` with `family="gaussian"` gives comparable results to `lme4` and `nlme`.
+* implement posterior predictive simulations to check the fit.
+* compute $R^2$ values for the responses according to some recipe (square of predicted vs. observed correlation; recipes according to Gelman and Pardoe (2006) or Nakagawa and Schielzeth (2013))
+
+### coral/symbiont/*Culcita*
+
+* find a better way to display the data that shows both fixed effects and among-block variation
+* aggregate the data by block/treatment combination and use binomial responses with $N=2$; compare results (is there any evidence of overdispersion??)
+* compare `MCMCglmm` mean, mode, and median with the point estimate of the block variance, and the `MCMCglmm` distribution with the density function predicted by `lme4` (apply `lme4:::dens` to a likelihood profile, or see `?plots.thpr` for density plots)
+* compare the confidence intervals on the treatment effects/predictions from conditional estimates and parametric bootstrapping (last picture in this section) to confidence interval predictions from `MCMCglmm` (use `predict.MCMCglmm` or extract the bits you need from the `$Sol` component of the result).
+
+## Gopher tortoise data
+
+* compare AGHQ fits to Laplace more carefully: try out the code in `laplDiag.Rmd`; fit the model with a variety of `nAGQ` values (as in the *Culcita* example)
+* try fitting with PQL (`MASS::glmmPQL`) to allow for underdispersed response.
+* Do you think the underdispersion is a general sign of overfitting (i.e. too much variation has been extracted from the responses), or is there something biological going on here?
+* colour the diagnostic plot according to the original number of shell counts (may be useful to use `ggplot2` instead of `lattice`)
+* how strong is the underdispersion? apparently not strong enough to skew the among-site variance in residuals (posterior predictive simulation)
+* why is the `glm` confidence interval for prevalence so much wider than the other methods?  Try a parametric bootstrap confidence interval on the `glm` estimate of the prevalence
+
+### Tick data
+
+* try an additive model (via `gamm4`, or initially via `mgcv`) for the effects of height
+* see whether the current version of `lme4` still gives convergence warnings without the `check.conv.grad` statement in the `glmerControl` call
+* compare densities for the within-brood, among-chick (observation-level) variances from `lme4:::dens(profile)` or `?plot.thpr` and the `MCMCglmm` results
+* adjust the diagnostic plots to indicate the values of the original observations (e.g. by colour)
+* explore the apparent reduction of variance with the mean
+    * can you come up with a posterior predictive summary that exposes this as a problem in the model?
+	* can you think of a way to adjust the model (whether or not it is feasible with the tools available)?
+
+### *Arabidopsis* clipping
+
+
+## Advanced
+* implement importance sampling/MCMC by sampling from the independent densities returned by `lme4:::dens`
+* incorporate the `printvc` function in `glmm_funs.R` into the `formatVC` function in `lmer.R`
+* figure out how to sample from the implied density from `lme4:::dens(profile)` to compare (implied) densities between `lme4`, `blmer`, and `MCMCglmm`

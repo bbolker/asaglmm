@@ -47,15 +47,13 @@ fm0 <- update(fm1,.~.-Days)
 
 ## Simulation examples
 
-These examples use capabilities in the development/`predsim` branches.
-
-```{r sims,cache=TRUE}
+```{r sims,cache=TRUE,warning=FALSE,message=FALSE}
 S1 <- arm::sim(fm1)  ## 100 sims
 S0 <- arm::sim(fm0)  ## 100 sims
 fvec1 <- fvec2 <- numeric(100)
 for (i in 1:100) {
-    ss1 <- simulate(fm0,newparams=list(beta=S0@fixef[i]))[[1]]
-    ss2 <- simulate(fm0)[[1]]
+    ss1 <- simulate(fm1,newparams=list(beta=c(S1@fixef[i,])))[[1]]
+    ss2 <- simulate(fm1)[[1]]
     fvec1[i] <- getME(refit(fm1,ss1),"beta")[2]
     fvec2[i] <- getME(refit(fm1,ss2),"beta")[2]   
 }
@@ -68,6 +66,7 @@ fdat <- rbind(data.frame(slope=fvec1,type="sim+pb"),
               data.frame(slope=fvec2,type="pb only"),
               data.frame(slope=S1@fixef[,2],type="sim only"))
 ```
+
 
 ```{r plots3,message=FALSE}
 library(ggplot2)

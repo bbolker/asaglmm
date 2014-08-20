@@ -56,12 +56,12 @@ visualize overlapping points.
 ```{r ggplot}
 ## have to aggregate by hand: stat_summary bug
 d2 <- ddply(d,c("Day","Group"),summarise,X=mean(X))
-(g1 <- ggplot(d,aes(x=Day,y=X,colour=Group))+
+g1 <- ggplot(d,aes(x=Day,y=X,colour=Group))+
     stat_sum(aes(size=factor(..n..)),alpha=0.5)+
     scale_size_discrete(range=c(2,5),name="npts")+
     geom_line(aes(group=Individual),alpha=0.5)+
-    geom_line(data=d2,lwd=2,alpha=0.8)+
-    scale_colour_brewer(palette="Dark2"))
+    scale_colour_brewer(palette="Dark2")
+g1 + geom_line(data=d2,lwd=2,alpha=0.8)
 ```
 
 The main conclusions from these pictures are that (1) we probably ought
@@ -94,7 +94,7 @@ of output, ending with:
 
 Unsurprisingly, a more complex
 model allowing for `Group*Day` effects fails too:
-```{r}
+```{r complfit}
 LME1 <- lme(X ~ Group*Day, random = ~Day|Individual, data=d)
 ```
 `
@@ -139,10 +139,12 @@ gnlsfit2 <- gnls(X ~ SSfpl(Day, asymp.L, asymp.R, xmid, scale),data=d,
 
 Plot predicted values:
 ```{r gnlspred}
-predframe <- with(d,expand.grid(Day=unique(Day),Group=levels(Group)))
+predframe <- with(d,expand.grid(Day=seq(min(Day),max(Day),length=51),
+                                Group=levels(Group)))
 predframe$X <- predict(gnlsfit2,newdata=predframe)
-g1 + geom_line(data=predframe,linetype=3,lwd=2,alpha=0.8)
+g1 + geom_line(data=predframe,lwd=2,alpha=0.8)
 ```
+
 These look pretty good (it would be nice to get confidence intervals too,
 but that's a little bit too much of a pain for right now -- need to use
 either delta method or bootstrapping).
@@ -154,10 +156,11 @@ dp <- data.frame(d,res=resid(gnlsfit2),fitted=fitted(gnlsfit2))
       geom_boxplot(outlier.colour=NULL)+
   scale_colour_brewer(palette="Dark2"))
 ```
+
 With the exception of individual #7 there's not a lot of evidence
 for among-individual variation ... if we wanted an excuse
 to ignore among-individual variation we could use
-```{r}
+```{r testresids}
 anova(lm(res~Individual,data=dp))
 ```
 (whatever philosophical issues this raises about using a large
@@ -167,7 +170,7 @@ null hypothesis that among-individual variation is absent ...)
 More general diagnostic plot -- residual vs. fitted, with points from the
 same individual connected with lines.  There is some hint of decreasing
 variance with increasing mean.
-```{r}
+```{r diagplot2}
 (diagplot2 <- ggplot(dp,aes(x=fitted,y=res,colour=Group))+geom_point()+
   geom_smooth(aes(group=1),colour="black",method="loess")+
   geom_path(aes(group=Individual))+
@@ -176,7 +179,7 @@ variance with increasing mean.
 
 I can't use `nlme` with the more ambitious (three parameters varying
 by group) model, but I can if I only allow `asymp.R` to vary:
-```{r}
+```{r nlmefit1}
 nlmefit1 <- nlme(model  = X ~ SSfpl(Day, asymp.L, asymp.R, xmid, scale),
      fixed  = list(asymp.R ~ Group, xmid+scale+asymp.L ~1),
      random = asymp.R ~ 1 | Individual,
@@ -185,11 +188,11 @@ nlmefit1 <- nlme(model  = X ~ SSfpl(Day, asymp.L, asymp.R, xmid, scale),
 ```
 
 The estimate of the variance in the right-hand asymptote is non-zero (yay):
-```{r}
-VarCorr(nlmefit1)
+```{r varcorr}
+nlme::VarCorr(nlmefit1)
 ```
 Adding the random effects doesn't change the parameters much at all:
-```{r}
+```{r comppars}
 print(mm1 <- merge(data.frame(cc=coef(gnlsfit2)),
             data.frame(cc=fixef(nlmefit1)),by="row.names"),
       digits=4)
@@ -215,17 +218,17 @@ accounting for the finite-size correction), but it's a
 little bit more work (and probably not really necessary
 since the answer is so strong).
 
-The 
-```{r}
+
+```{r ftest}
 devdiff <- -2*c(logLik(nlmefit2)-logLik(nlmefit1))
 pchisq(devdiff,df=2,lower.tail=FALSE)
-## F-test with very large denominator:
+## match with F-test with very large denominator:
 pf(devdiff/2,df1=2,df2=1000000,lower.tail=FALSE)
 ```
 
 ```{r nlmefittab,echo=FALSE}
 printCoefmat(rename(data.frame(summary(nlmefit1)$tTable),
-                    c(p.value="Pr(|t|>1)")))
+                    c(p.value="Pr(|t|>0)")))
 ```
 We don't really know the relevant denominator df,
 but the summary above suggests the denominator df is 40
@@ -248,14 +251,15 @@ the correct syntax, `nlmer` seems too fragile to get the answer.
 [This StackOverflow question](http://stackoverflow.com/questions/11056625/how-to-add-fixed-effect-to-four-parameter-logistic-model-in-nlmer) asks
 the same question (syntax, not overcoming fragility).
 
-The basic RE model (without group effects) works fine:
-```{r eval=FALSE}
+The basic RE model (without group effects) fails:
+```{r nlmerfit1}
 nlmerfit1 <- nlmer(
   X ~ SSfpl(Day, asymp.L, asymp.R, xmid, scale) ~
          asymp.R|Individual,
      start =  list(nlpars=c(asymp.L=0.7,
      asymp.R=0.6,xmid=5,scale=1)),data=d)
 ```
+
 
 With help from Reinhold Kliegl I got a bit farther (only to
 be frustrated again: see below).  As I understand it, one
@@ -316,7 +320,7 @@ and see if I can get it to work.
 
 Right now we are using the development version of `lme4`, i.e. version `r as.character(packageVersion("lme4"))`.
 We *can* get an answer (**but not a sensible answer**) with the stable (`lme4.0`) version.
-```{r switchlme4,warning=FALSE}
+```{r switchlme4,warning=FALSE,message=FALSE}
 detach("package:lme4",unload=TRUE)
 library("lme4.0")
 packageVersion("lme4.0")
@@ -591,14 +595,16 @@ admbfit3B <- do_admb("algae3",
 library(coefplot2)
 ## n.b. need latest version (1.3.3.3)
 cc <- coeftab(admbfit3B)[1:11,] ## omit RE parameters
+rownames(cc) <- names(coef(admbfit3B))
 coefplot2(list(cc),intercept=TRUE)
 ```
 
 Now we're annoyed about the scaling, so (with some fussing) we can replot the group-varying parameters in separate panels:
+
 ```{r facetplot,echo=FALSE,fig.height=3,warning=FALSE}
-cc2 <- rename(subset(cc,
+cc2 <- as.data.frame(rename(subset(cc,
                      select=c("Estimate","Std. Error")),
-              c(`Std. Error`="stderr"))
+              c(`Std. Error`="stderr")))
 cc2$var <- rownames(cc2)
 cc2$vcat <- gsub("\\.[0-9]$","",cc2$var)
 cc2$grp <- levels(d$Group)[as.numeric(gsub("^[[:alpha:]]+\\.","",cc2$var))]
@@ -609,13 +615,16 @@ ggplot(cc2,aes(x=grp,y=Estimate,ymin=Estimate-1.96*stderr,
 ```
 
 Diagnostic plots:
+
 ```{r diagplots}
 ## drop conditional mode/individual-R estimates
-admb3pred <- coef(admbfit3,"extra")[-(1:9)]
+xx <- coef(admbfit3,"extra")
+admb3pred <- xx
 admb3res <- admb3pred-d$X
 dp2 <- data.frame(d,res=admb3res,fitted=admb3pred)
 diagplot1 %+% dp2
 ```
+
 Perhaps a hint of greater variance in the two treatment groups?
 
 Fitted vs. residual:
@@ -625,8 +634,9 @@ diagplot2 %+% dp2
 
 Overlay predictions (dashed lines):
 ```{r overlaypred}
-g1 + geom_line(data=dp2,aes(y=fitted,group=Individual),lty=2)
+g1 + geom_line(data=dp2,aes(y=fitted,group=Individual),lty=2,lwd=1.5)
 ```
+
 It would be nice but a bit more tedious to generate smooth
 prediction curves (i.e. for intermediate `Day` values).
 
@@ -687,6 +697,7 @@ ispl_upr <- with(subset(na.omit(proftab12)
 Rsigma_confint <- c(lwr=predict(backSpline(ispl_lwr),Lcut)$y,
              upr=predict(backSpline(ispl_upr),Lcut)$y)
 ```
+
 The 95% profile confidence intervals on $\sigma^2_R$ (derived from inverting an interpolation spline fitted to these points) are {`r Rsigma_confint["lwr"]`,`r Rsigma_confint["upr"]`}.
 
 I haven't computed it, but the transformed profile plot (on a $y$ scale corresponding to the square-root deviation of the deviance from the minimum deviance, so that a quadratic profile would be a symmetric V) shows that the quadratic approximation would be fairly bad for this case ...

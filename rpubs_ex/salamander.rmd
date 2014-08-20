@@ -1,0 +1,258 @@
+Salamander GLMM
+==========================
+
+```{r opts,echo=FALSE}
+opts_chunk$set(tidy=FALSE,fig.width=6,fig.height=4)
+```
+
+```{r pkgs,message=FALSE,warning=FALSE}
+library(plyr)
+library(lme4)
+library(glmmADMB)
+library(bernor)
+library(MASS)
+library(nlme)
+library(hglm)
+```
+
+```{r utils,echo=FALSE}
+sumfun <- function(m) c(fixef(m),unlist(VarCorr(m)))
+```
+
+The "salamander mating" data set is a classic example in generalized linear mixed models (e.g. see this example [from Charlie Geyer](http://www.stat.umn.edu/geyer/bernor/example7.pdf), or this one [from the SAS PROC GLIMMIX documentation](http://support.sas.com/documentation/cdl/en/statug/63962/HTML/default/viewer.htm#statug_glimmix_sect016.htm)).  Geyer points out that this example has been discussed by:
+
+>  McCullagh and Nelder (1989), Schall (1991), Karim and Zeger
+(1992), Breslow and Clayton (1993), Wolfinger and O’Connell (1993), and Shun
+(1997).
+
+(More recently, it has been analyzed by @booth_maximizing_1999 and by @sung_monte_2007.)
+
+Estimates of female and male variance parameters from
+SAS PROC GLIMMIX:
+```{r SASests,echo=FALSE}
+(SASests <- matrix(c(1.4099,0.8871,0.08963,0.4102),
+                  byrow=TRUE,nrow=2,
+                  dimnames=list(c("fnum","mnum"),
+                                c("var_est","var_se"))))
+```
+
+Estimates of all parameters (from @booth_maximizing_1999 by
+way of Geyer's example).
+```{r BHests,echo=FALSE}
+(BHests <- c("R/R"=1.030,"R/W"=0.320,
+             "W/R"=-1.950,"W/W"=0.990,
+             "sigma_f"=1.183 ,"sigma_m"=1.118))
+```
+Geyer considers these results to be the gold standard (he gets close to them with a sufficiently thorough Monte Carlo maximum likelihood fit, and says he has independently confirmed with an MCMC fit).
+As shown below, it seems as though most available algorithms
+estimate the among-female variance by quite a lot (orders of
+magnitude, although surprisingly (to me) SAS PROC GLIMMIX is
+one of the closest ...
+
+```{r getdat}
+sdat <- read.table("salamander.txt",header=TRUE,
+                   colClasses=c(rep("factor",5),"numeric"))
+```
+
+Check experimental design:
+```{r exptabs}
+with(sdat,table(fpop,mpop))
+with(sdat,table(fnum,mnum))
+```
+
+## Methods
+
+### lme4
+
+```{r lme4fit,message=FALSE}
+library(lme4)
+LM_t_0 <- system.time(
+  LM_fit_0 <- glmer(mating~0+fpop:mpop+
+        (1|mnum)+(1|fnum),
+      sdat,family=binomial))
+  
+print(LM_fit_0,cor=FALSE)
+```
+
+### glmmADMB
+```{r GA0,message=FALSE}
+library(glmmADMB)
+GA_t_0 <-
+  system.time(
+    GA_fit_0 <- glmmadmb(mating~0+fpop:mpop+
+        (1|mnum)+(1|fnum),
+      sdat,family="binomial"))
+```
+
+#### Importance sampling
+
+Using importance sampling to try to do better (see [D. Fournier's post](https://groups.google.com/forum/#!topic/admb-users/7RltSt9Pm1A)):
+```{r GA_is, cache=TRUE}
+## 25 points, 50 samples, random number seed=121:
+GA_t_is1 <- system.time(
+  GA_fit_is1 <- glmmadmb(mating~0+fpop:mpop+
+        (1|mnum)+(1|fnum),
+      sdat,family="binomial",
+          extra.args="-is 25  121  50"))
+GA_t_is2 <- system.time(
+  GA_fit_is2 <- glmmadmb(mating~0+fpop:mpop+
+        (1|mnum)+(1|fnum),
+      sdat,family="binomial",
+          extra.args="-is 50  121  100"))
+```
+
+```{r cmat,echo=FALSE}
+nvec <- c("glmer","GA_0","GA_is_50","GA_is_100")
+mList <- list(LM_fit_0,GA_fit_0,GA_fit_is1,GA_fit_is2)
+cmat <- t(laply(mList,sumfun))
+colnames(cmat) <- nvec
+print(cmat,digits=3)
+```
+*Conclusion*: Results are similar from both approaches; Laplace approximation doesn't work that well. Importance sampling only helps a bit.
+
+#### glmmADMB with MCMC
+
+```{r GA_mcmc,cache=TRUE}
+GA_t_mcmc <- system.time(
+  GA_fit_mcmc <- glmmadmb(mating~0+fpop:mpop+
+        (1|mnum)+(1|fnum),
+      sdat,family="binomial",
+      mcmc=TRUE))
+```
+
+Diagnose (the `tmpL` variables represent the
+variance parameters, on a standard deviation scale).
+```{r traceplot}
+library(coda)
+xyplot(GA_fit_mcmc$mcmc[,1:6],layout=c(2,3),aspect="fill")
+```
+
+A close-up of the female-sd parameter:
+
+```{r sdfhist,echo=FALSE}
+par(bty="l",las=1)
+hist(log10(GA_fit_mcmc$mcmc[,"tmpL.2"]),col="gray",breaks=50,
+     main="",ylab="log(sd(F))",freq=FALSE)
+```
+
+Bottom line, these chains aren't mixing very well. We would have to run it for a lot longer, or fuss with tuning parameters like `mcgrope`, to get a good answer this way.
+
+### glmmPQL
+
+glmmPQL should in principle work, but
+[various people have tried and failed](http://tolstoy.newcastle.edu.au/R/help/05/01/10005.html)
+```{r glmmPQLfit,message=FALSE}
+library(MASS)
+library(nlme)
+## http://tolstoy.newcastle.edu.au/R/help/05/01/10005.html
+sdat$dummy <- factor(rep(1,nrow(sdat)))
+sdatG <- groupedData(mating~1|dummy,sdat)
+glmmPQL(mating~0+fpop:mpop,
+        data=sdatG,
+  random=pdBlocked(list(pdIdent(~mnum-1),
+                        pdIdent(~fnum-1))),
+        family=binomial)
+## this one works, but only with groupedData
+lme(mating~0+fpop:mpop,data=sdatG,
+        random=pdBlocked(list(pdIdent(~mnum-1),pdIdent(~fnum-1))))
+data(Assay)  ## from PB p 165
+Assay <- as.data.frame(Assay)
+fm1Assay <- lme(logDens~sample*dilut,Assay,
+         random=pdBlocked(list(pdIdent(~1),pdIdent(~dilut-1),pdIdent(~sample-1))))
+```
+I think the proximal problem is that `glmmPQL` constructs a model frame from the data, which loses the `groupedData` class (and the `formula` attribute, which seems necessary -- I'm not sure why).  It might be hackable ...
+
+### `bernor` package
+
+Geyer and Sung's `bernor` package is probably the best available (=most accurate) R choice at the moment.  However, it needs some hacking to make it run with modern R. I have built `bernor` v. 0.3-8, can make it available if necessary.
+
+The following code is reproduced from [Geyer's example](http://www.stat.umn.edu/geyer/bernor/example7.pdf) (this also demonstrates that Geyer's package, while functional, does not package everything nicely for the user as we have come to expect)
+
+```{r bernor1}
+set.seed(101)  ## initialize .Random.seed
+objfun <- function(theta) {
+   if (!is.numeric(theta))
+   stop("objfun: theta not numeric")
+   if (length(theta) != nparm)
+      stop("objfun: theta wrong length")
+   mu <- theta[seq(1, nfix)]
+   sigma <- theta[-seq(1, nfix)]
+   .Random.seed <<- .save.Random.seed
+   bnlogl(y, mu, sigma, nmiss, x, z, i, moo)$value
+}
+objgrd <- function(theta) {
+   if (!is.numeric(theta)) 
+     stop("objfun: theta not numeric")
+   if (length(theta) != nparm)
+     stop("objfun: theta wrong length")
+   mu <- theta[seq(1, nfix)]
+   sigma <- theta[-seq(1, nfix)]
+   .Random.seed <<- .save.Random.seed
+  bnlogl(y, mu, sigma, nmiss, x, z, i, moo, deriv = 1)$gradient
+}
+## FIXME: should memoize!
+library(bernor)
+data(salam)
+attach(salam)  ## would prefer not to do this ...
+nparm <- ncol(x) + length(unique(i))
+nfix <- ncol(x)
+moo <- model("gaussian", length(i), 1)
+.save.Random.seed <- .Random.seed
+nobs <- ncol(y)
+nmiss <- 100
+theta.start <- rep(0, nparm)
+names(theta.start) <- c(dimnames(x)[[2]], paste("sigma", c("f",
+"m"), sep = "_"))
+lower <- rep(0, nparm)
+lower[1:ncol(x)] <- (-Inf)
+trust <- 1
+lowert <- pmax(lower, theta.start - trust)
+uppert <- theta.start + trust
+control <- list(fnscale = -10)
+tout <- system.time(out <- optim(theta.start, objfun, objgrd,
+method = "L-BFGS-B", lower = lowert, upper = uppert, control = control))
+cat("elapsed time", tout[1], "seconds\n")
+```
+
+Retry with larger trust region (slow)
+```{r bernor2}
+nmiss <- 10000
+theta.start <- out$par
+lowert <- pmax(lower, theta.start - trust)
+uppert <- theta.start + trust
+control <- list(fnscale = signif(out$value, 1))
+```
+
+```{r trust2,cache=TRUE}
+tout <- system.time(out <- optim(theta.start, objfun, objgrd,
+  method = "L-BFGS-B", lower = lowert, upper = uppert, control = control))
+cat("elapsed time", tout[1], "seconds\n")
+```
+
+Read the linked example by Geyer for more details: they go on to try `nmiss=1e7` (number of samples of "missing data" [=latent variables]?, which they say is very slow, but they also say their results match @booth_maximizing_1999 , and an independent MCMC estimate, to 3 significant digits).
+
+### hglm
+
+
+```{r hglm}
+hglm_fit_0 <- hglm2(meanmodel = mating ~ 0 + fpop:mpop  + 
+                       (1 | as.numeric(fnum)) + (1 | as.numeric(mnum)), 
+                    family = binomial(), data = sdat,
+                    conv = 1e-08, maxit = 40)
+```
+
+The example from the `hglm` vignette:
+```{r}
+data(salamander)
+hglm.salam <- hglm2(meanmodel = Mate ~ TypeF + TypeM + TypeF*TypeM + (1 | Female) + (1 | Male), family = binomial(), data = salamander,conv = 1e-08, maxit = 40)
+```
+
+Note `hglm` has a different version of the salamander data set -- 360 rather than 120 values ... ('summer' data set is what we've entered above, I think, this is both summer and fall ... ...)
+(Even for the data as included with `hglm` I don't seem to be getting exactly the same structure as in the `hglm` vignette ... ???)
+
+## To do/Other possibilities
+* SAS, AS-REML
+* INLA?
+* WinBUGS/JAGS/Stan?
+* print package numbers etc.
+* pictures of estimates, timings, confidence intervals ...

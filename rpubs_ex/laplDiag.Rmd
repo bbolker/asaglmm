@@ -174,7 +174,7 @@ but at least at first glance it looked too good.
 Try the toenail data 
 
 ```{r toenailfit,cache=TRUE}
-toenail <- read.csv("toenail.csv")
+toenail <- read.csv("../data/toenail.csv")
 m2 <- glmer(outcome~treatment+visit+(visit|patient),toenail,
             family=binomial)
 ```

@@ -1,0 +1,89 @@
+## Spatial stuff
+
+Since I don't have any data I'm going to simulate some.
+
+Drawing from simulation lab from OSS 2014 course (URL):
+
+```{r pkgs,message=FALSE}
+library(RandomFields)
+library(ggplot2); theme_set(theme_bw())
+library(plyr)  ## for mutate()
+library(lme4)
+library(nlme)
+```
+
+Set up grid:
+```{r simdes}
+set.seed(101)
+npts <- 400
+L <- 30  ## length scale
+gL <- 10   ## grid scale
+ng <- round(L/gL)
+dd <- data.frame(x=runif(npts,max=L),y=runif(npts,max=L))
+dd <- transform(dd,xg=findInterval(x,seq(0,L,by=gL)),
+                   yg=findInterval(y,seq(0,L,by=gL)))
+dd <- transform(dd,g=interaction(xg,yg))
+table(dd$g)
+ggplot(dd,aes(x,y,colour=g))+geom_point()
+```                
+
+Covariate (somewhat trivial):
+```{r cov}
+dd$precip <- 2*runif(npts)
+```
+
+Trend (also somewhat trivial):
+```{r trend}
+dd <- transform(dd,trend=0.02*x+0.04*y)
+```
+
+Random field layer:
+```{r rndfield,message=FALSE}
+m <- RMgauss(var=4, scale=5)+RMnugget(var=0.5)
+ss <- RFsimulate(m,x=dd$x,y=dd$y)  ## ignore message you get here ...
+dd$rnd <- ss$variable1
+detach("package:RandomFields")
+## we don't need RandomFields any more, and it contains an
+## obsolete Variogram() function that gets in our way
+```
+
+Simulate linear predictor:
+```{r etasim}
+dd <- mutate(dd,eta=trend+0.1*precip+rnd,
+             z=rpois(npts,exp(eta)))
+ggplot(dd,aes(x,y,size=log(z)))+geom_point()
+```
+
+```{r fit1}
+library(lme4)
+fit0 <- glm(z~precip+x+y,family=poisson,data=dd)
+fit1 <- glmer(z~precip+x+y+(1|g),family=poisson,data=dd)
+ddf <- transform(dd,
+                 .resid0=residuals(fit0),
+                 .resid=residuals(fit1))
+ggplot(ddf,aes(x,y))+
+    geom_point(aes(size=abs(.resid),
+                   colour=(.resid>0)),alpha=0.3)+
+    scale_colour_manual(values=c("blue","red"))+
+    scale_size(range=c(2,7))  ## make points a little bigger
+```
+
+```{r vgram}
+g0 <- gls(.resid0~1,data=ddf)
+g1 <- lme(.resid~1,random=~1|g,data=ddf)
+plot(Variogram(g0,maxDist=30)) ## ??
+plot(Variogram(g1)) ## ??
+```
+```{r}
+confint(fit0)["precip",]
+confint(fit1)["precip",]
+```
+
+```{r}
+library(INLA)
+## ugh. fails.
+```
+
+```{r}
+library(spaMM)
+```

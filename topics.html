@@ -1,0 +1,249 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<ul>
+<li>This is a <strong>preliminary</strong> list of topics that I would like to cover.</li>
+<li>I have no idea if these ideas are really going to fit into the time available. Hopefully we will spend a chunk of time working on individual data sets.</li>
+</ul>
+<h1 id="monday-morning-9-noon">Monday morning (9-noon)</h1>
+<h2 id="introduction-and-context">Introduction and context</h2>
+<ul>
+<li>introductions
+<ul>
+<li>discuss available data sets/projects</li>
+<li>references:
+<ul>
+<li>Bolker et al 2009 TREE (obsolete?)</li>
+<li>Bates et al in review ArXiv/JSS: LMMs</li>
+<li>Bates et al in prep: GLMMs</li>
+<li>Bolker in review Fox et al</li>
+</ul></li>
+<li>methods/packages: <code>lme4</code>, <code>glmmADMB</code>, <code>MCMCglmm</code>, &quot;other&quot;
+<ul>
+<li><code>lme4</code>
+<ul>
+<li>fastest</li>
+<li>user-specified families</li>
+</ul></li>
+<li><code>glmmADMB</code>
+<ul>
+<li>flexibility: zero-inflation, compounded/extended distributions</li>
+</ul></li>
+<li><code>MCMCglmm</code>
+<ul>
+<li>propagation of variability</li>
+<li>multi-type models, pedigree/phylogeny</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>visualization:
+<ul>
+<li>Cleveland hierarchy</li>
+<li>grammar of graphics</li>
+<li>exploratory vs diagnostic vs presentation</li>
+<li>coefficient plots</li>
+<li>graphical challenges of multi-level/hierarchical data
+<ul>
+<li>spaghetti plots; facets</li>
+</ul></li>
+</ul></li>
+<li>available examples:
+<ul>
+<li>Fox et al. chapter:
+<ul>
+<li>tundra carbon</li>
+<li>coral symbionts</li>
+<li>gopher tortoise mycoplasma</li>
+<li>grouse ticks</li>
+</ul></li>
+<li><em>Arabidopsis</em> clipping</li>
+<li>owls (Roulin and Bersier)</li>
+<li><em>Glycera</em></li>
+<li><code>lme4</code> package: contagious bovine pleuropneumonia</li>
+<li><code>mlmRev</code> package
+<ul>
+<li>contraception</li>
+<li>Guatemala health care (Rodriguez and Goldman)</li>
+</ul></li>
+</ul></li>
+<li>model definition
+<ul>
+<li>notation (X, beta, Z, b, u, Lambda, Sigma)</li>
+<li>GLMs: exponential family</li>
+<li>random effects: varied perspectives (Gelman 2005)
+<ul>
+<li>allowance for non-independence</li>
+<li>shrinkage estimation</li>
+<li>(random) sample from exchangeable units</li>
+<li>units within a hyperprior specification</li>
+<li>variance as target of estimation</li>
+<li>nuisance parameters</li>
+<li>allow extrapolation to other units</li>
+</ul></li>
+<li>model specification: scalar vs non-scalar RE, grouping variables, crossed vs nested, etc.
+<ul>
+<li>&quot;keep it maximal&quot; (Schielzeth and Forstmeier 2009, Barr et al 2013)?</li>
+</ul></li>
+<li>advanced model specification (<code>flexLambda</code>, <code>dummy</code>/group-specific variances, double-bar notation, etc.)</li>
+<li>overdispersion, observation-level random effects</li>
+<li>R-side effects; correlation structures on latent variables</li>
+<li>conditional, marginal, restricted likelihood</li>
+</ul></li>
+<li>avoiding mixed models
+<ul>
+<li>residual tests from iid model</li>
+<li>use fixed effects</li>
+<li>aggregate (Murtaugh 2007)</li>
+<li>two-stage models (<code>lmList</code> etc.)</li>
+<li>Hausman tests (<code>hausman.R</code>)</li>
+</ul></li>
+</ul>
+<p><strong>ACTIVITY</strong></p>
+<ul>
+<li>pick one of the examples from the Fox <em>et al.</em> chapter (or?) the Banta example; work through it. Make a list of things that you can't do/would like to do; save any new pictures you create/conclusions you come to. Try some of the extensions from the examples.</li>
+</ul>
+<h1 id="monday-afternoon-1-5-pm">Monday afternoon (1-5 PM)</h1>
+<h2 id="estimation">Estimation</h2>
+<ul>
+<li>estimation
+<ul>
+<li>finding conditional modes
+<ul>
+<li><code>lme4</code> (linear solution; PIRLS)</li>
+<li><code>glmmADMB</code> (brute force)</li>
+</ul></li>
+</ul></li>
+</ul>
+<p><strong>ACTIVITY</strong> ??</p>
+<h1 id="tuesday-morning">Tuesday morning</h1>
+<h2 id="algorithms-continued">Algorithms continued</h2>
+<ul>
+<li>integration for GLMMs: deterministic algorithms
+<ul>
+<li>penalized quasi-likelihood</li>
+<li>Laplace approximation</li>
+<li>adaptive Gauss-Hermite quadrature</li>
+<li>(INLA)</li>
+</ul></li>
+<li>integration; stochastic algorithms
+<ul>
+<li>MCMC</li>
+<li>etc. (MCEM; data cloning)</li>
+</ul></li>
+<li>modular structure of <code>lme4</code>
+<ul>
+<li>conceptual
+<ul>
+<li>level I: PLS/finding conditional modes (lmer paper)</li>
+<li>level II: PIRLS/integration (glmer paper)</li>
+<li>level III: nonlinear optimization (lmer paper)</li>
+<li>level IV: formula construction, interface, accessor methods, prediction and simulation, etc.</li>
+</ul></li>
+<li>programming
+<ul>
+<li><code>[g]lFormula</code></li>
+<li><code>mk(Gl|L)merDevfun</code></li>
+<li><code>optimize(Gl|L)mer</code></li>
+<li><code>updateGlmerDevfun</code></li>
+<li><code>mkMerMod</code></li>
+</ul></li>
+</ul></li>
+</ul>
+<h2 id="diagnostics-and-troubleshooting">Diagnostics and troubleshooting</h2>
+<ul>
+<li>troubleshooting
+<ul>
+<li>issues with few levels of RE (and solutions)</li>
+<li>assessing singular fits, convergence warnings</li>
+<li>slices</li>
+</ul></li>
+<li>diagnostics
+<ul>
+<li>individual-level</li>
+<li>group-level</li>
+<li>posterior predictive summaries</li>
+</ul></li>
+<li>assessing temporal/spatial covariance in residuals
+<ul>
+<li>spatial/temporal maps of residuals (colour, alpha, size), possibly interpolated</li>
+<li>fit residuals with null model (e.g. <code>gls</code>), use <code>ACF</code> or <code>Variogram</code> from <code>nlme</code>; tools from <code>spdep</code> to compute Moran correlogram?</li>
+</ul></li>
+</ul>
+<h2 id="inference-core">Inference (core)</h2>
+<ul>
+<li>model comparison: Wald &lt; LRT &lt; parametric bootstrap; MCMC</li>
+<li>confidence intervals: Wald &lt; likelihood profile &lt; PB; MCMC</li>
+<li>finite size effects (LMMs: <span class="math"><em>χ</em><sup>2</sup></span> vs <span class="math"><em>F</em></span>)</li>
+<li>finite size effects (Bartlett)</li>
+<li>boundary effects</li>
+</ul>
+<h1 id="tuesday-afternoon">Tuesday afternoon</h1>
+<h2 id="post-fit-assessmentextended-inference">Post-fit assessment/extended inference</h2>
+<ul>
+<li>Variances of conditional modes</li>
+<li>Prediction and simulation</li>
+<li>Confidence intervals on predictions/derived quantities</li>
+<li>information criteria and (G)LMMs: (levels of focus, AIC vs DIC vs cAIC)</li>
+<li>R-squared, repeatability, and all that</li>
+<li>Variable importance and all that
+<ul>
+<li>scaled coefficients</li>
+</ul></li>
+</ul>
+<h2 id="extensions">Extensions</h2>
+<ul>
+<li><strong>zero-inflation</strong></li>
+<li>restricted variance structures, revisited</li>
+<li><strong>space/time: correlation structures</strong>
+<ul>
+<li>nesting</li>
+<li>spatial/temporal (phylogenetic) correlation structures, pedigrees, random fields</li>
+<li>SAR/CAR??</li>
+<li>discrete mixture models?</li>
+<li>GAMMs</li>
+</ul></li>
+<li><strong>nonlinear models</strong></li>
+<li><strong>multinomial models</strong> (??)</li>
+<li>compound distributions (negative binomial etc.)
+<ul>
+<li><code>glmer.nb</code></li>
+</ul></li>
+<li>penalized methods
+<ul>
+<li>lasso; fence?</li>
+<li>penalization via random effects specification with fixed <span class="math"><em>θ</em></span></li>
+</ul></li>
+<li>multivariate models via stacking; multitype models</li>
+<li><p>survival analysis, non-standard links, offsets ...</p></li>
+<li>tools:
+<ul>
+<li>core: <code>lme4</code>, <code>glmmADMB</code>, <code>MCMCglmm</code>, <code>nlme</code></li>
+<li>other R: <code>glmmML</code>, <code>MASS::glmmPQL</code></li>
+<li>toolboxes: BUGS (WinBUGS/OpenBUGS/JAGS); AD Model Builder</li>
+<li>new: TMB, INLA, Stan, NIMBLE, ?? ...</li>
+<li>commercial: Stata, AS-REML/Genstat, SAS</li>
+</ul></li>
+</ul>
+<h2 id="to-do">To do</h2>
+<ul>
+<li>worked example with pictures of linear model components (cf Bates chapter); add multi-effect model, e.g. Banta</li>
+<li>spatial/temporal correlation stuff: Contraception? simulation</li>
+<li>convergence testing: kt_rep example, Banta example
+<ul>
+<li>add to 'troubleshooting'</li>
+<li>allFit</li>
+<li>refit</li>
+<li>slice2D</li>
+<li>multiStart</li>
+</ul></li>
+<li>zero-inflation</li>
+</ul>
+</body>
+</html>

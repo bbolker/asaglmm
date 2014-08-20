@@ -15,22 +15,6 @@ it does not allow power calculations for problems with "R-side" effects
 (temporal and spatial autocorrelation, heteroscedasticity) which cannot
 currently be handled in `lme4`.
 
-You will neeed a fairly recent/development version of `lme4`; if
-you have compilation tools installed, the easiest way to get
-the very latest version is:
-```{r devtools_install,eval=FALSE}
-library(devtools)
-install_github("lme4",user="lme4")
-```
-You can also try your luck with:
-```{r rforge_install,eval=FALSE}
-install.packages("lme4",repos=c("http://lme4.r-forge.r-project.org/repos",
-                        getOption("repos")))
-```
-(although you will have to see whether the version you get that way is
-sufficiently up to date: check `?simulate.merMod` and see whether it
-mentions a `formula` argument or not).
-
 ```{r load_lme4}
 library(lme4)
 packageVersion("lme4")
@@ -166,17 +150,18 @@ fitsim2 <- function(i) {
 }
 ```
 
-```{r fitAll2,cache=TRUE}
+```{r fitAll2,eval=FALSE}
 t2 <- system.time(fitAll2 <- laply(seq(nsim),function(i) fitsim2(i)))
 ## .progress="text")
 fitAll2 <- setNames(as.data.frame(fitAll2),
                    c("est","stderr","zval","ttt.pval",
                      "indivvar.homog","indivvar.var","obsvar",
                      "devdiff","var.pval"))
-save("fitAll2",file="fitAll2.RData")
+save("t2","fitAll2",file="fitAll2.RData")
 ```
-
-(This took `r round(t2["elapsed"]/60,1)` minutes on my laptop.)
+```{r fitAll2_load}
+load("../data/fitAll2.RData")
+```
 
 ```{r}
 head(fitAll2)
