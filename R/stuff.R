@@ -1,4 +1,8 @@
 ## finding hidden things
+
+## this is a very useful, recent post of R navigational tools:
+##  http://www.burns-stat.com/r-navigation-tools/
+
 library(nlme)
 methods("ACF")
 ## argh, 'Non-visible functions are asterisked'
@@ -8,14 +12,15 @@ nlme:::ACF.lme
 (gg <- getAnywhere("ACF.lme"))
 cbind(gg$name,gg$where)
 gg$objs[[1]]
-getAnywhere("dens")
+
+## another example:
 library(lme4)
 lme4:::dens
 getAnywhere("dens")
 
-## there's probably a StackOverflow answer somewhere (maybe by me?)
 
-
+## incantation for installing and replacing the bbmle package
+## with a newer version:
 install.packages(file.choose(),type="source",repos=NULL)
 detach("package:bbmle",unload=TRUE)
 library("bbmle")
