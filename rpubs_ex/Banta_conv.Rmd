@@ -5,25 +5,101 @@ previously looked at) that we were now getting some convergence
 warnings when fitting the full data
 
 ```{r getstuff}
-dat.tf <- read.csv("../data/Banta_TotalFruits.csv")
-library(lme4)
+## dat.tf <- read.csv("../data/Banta_TotalFruits.csv")
+library("lme4")
+data(Arabidopsis)
+dat.tf <- Arabidopsis
+## or retrieve data from
+##   https://github.com/lme4/lme4/blob/master/data/Arabidopsis.rda
+library("lattice")
+library("bbmle")
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("numDeriv")
 ```
 
 ```{r fit1,cache=TRUE}
-mp1 <- glmer(total.fruits ~ nutrient*amd +
+(t1 <- system.time(mp1 <- glmer(total.fruits ~ nutrient*amd +
              rack + status +
              (amd*nutrient|popu)+
              (amd*nutrient|gen),
-             data=dat.tf, family="poisson")
+             data=dat.tf, family="poisson")))
 ```
 
+## Skipping gradient/Hessian convergence checks
+
+We can save time (not much in this case) by skipping the convergence tests
+based on the gradient and Hessian
+(at the expense of missing this information).
+
+```{r fit_nohess,cache=TRUE}
+(t2 <- system.time(update(mp1,
+             control=glmerControl(calc.derivs=FALSE))))
+```
+(as of the current version, `update()` doesn't use any tricks
+that would make it faster than re-running the model
+from scratch-- e.g. starting from
+last achieved parameter values).
+
+```{r optinfo,echo=FALSE}
+npars <- length(unlist(getME(mp1,c("theta","beta"))))
+nevals <- mp1@optinfo$feval
+```
+The number of function evaluations 
+needed for the gradient/Hessian scales as $p(p+1)/2$; in 
+this case the model has `r npars` parameters
+(`r npars*(npars+1)/2` evaluations for the Hessian)
+parameters, but the entire fit takes
+`r nevals` evaluations, so that doesn't actually save us very much ...
+
+If we use `nloptwrap` *and* shut off the Hessian checking, we
+can speed up quite a bit:
+```{r fit_nlopt_nohess,cache=TRUE}
+(t3 <- system.time(mp1B <- update(mp1,
+             control=glmerControl(optimizer=nloptwrap,
+                         calc.derivs=FALSE))))
+```
+The fit gets within `r round(c(logLik(mp1)-logLik(mp1B)),4)` 
+log-likelihood units of the original fit, and is obviously
+a lot faster (it only uses `r mp1B@optinfo$feval` function
+evaluations!)
+
+How 
+Just for completeness, we can try with `nloptwrap` but
+letting the convergence checks run:
+```{r fit_nlopt,cache=TRUE}
+(t4 <- system.time(mp1C <- update(mp1,
+             control=glmerControl(optimizer=nloptwrap))))
+```
+This does indicate a larger gradient
+
+### more accurate gradient/Hessian computations
+
+```{r numdgrad,cache=TRUE}
+## it takes a while just to set up this model too!
+(t5 <- system.time(dd <- update(mp1,devFunOnly=TRUE)))
+pars <- unlist(getME(mp1,c("theta","beta")))
+(t6 <- system.time(g <- grad(dd,pars)))
+(t7 <- system.time(H <- hessian(dd,pars)))
+scgrad <- solve(H,g)
+scgrad2 <- with(mp1@optinfo$derivs,solve(Hessian,gradient))
+max(abs(scgrad))
+max(abs(scgrad2))
+```
+
+So inaccuracy of the simpler finite difference approximation is not the
+issue driving the convergence warnings.
+
 ### try restarting from the same point
+
+This may be the best/simplest approach.
 
 ```{r restart,cache=TRUE}
 final <- getME(mp1,c("theta","fixef"))  ## extract theta and beta (fixed)
 sapply(final,length)  ## lots of parameters!
 mp1U <- update(mp1,start=final)
 ```
+No convergence warnings ...
 
 ```{r eval_restart}
 summary(fixef(mp1U)/fixef(mp1))
@@ -51,19 +127,45 @@ source("../R/allFit.R")
 aa <- allFit(mp1)
 ```
 
-```{r}
-summary.allfit(aa)
+We can print out a full numeric summary, but won't bother ...
+```{r summary_allfit}
+ss <- summary.allfit(aa)
 ```
+
+Graphical:
+```{r sumplot,fig.width=10,fig.height=4,warning=FALSE,message=FALSE}
+ss2 <- transform(subset(melt(ss$sdcor),Var1!="Nelder_Mead."),
+                 Var2=factor(Var2,levels=levels(Var2),
+                 label=abbreviate(levels(Var2))))
+(g0 <- ggplot(ss2,aes(Var2,value,colour=Var1))+
+    geom_point(position=position_dodge(width=0.5))+
+    facet_wrap(~Var2,scale="free")+
+ scale_y_continuous(breaks=function(x) {
+     ## print(x);
+     b <- c(floor(x*1000)/1000,
+            ceiling(x*1000)/1000)
+     ## print(b)
+     b
+ }))
+```
+
+* both the built-in and the `nloptr` BOBYQA fit without convergence failure
 
 ### try looking at likelihood slices
 
 ```{r slices,cache=TRUE}
 dd1 <- update(mp1,devFunOnly=TRUE)
 pp1 <- unlist(getME(mp1,c("theta","fixef")))
-s2D.1 <- bbmle:::slice2D(pp1,dd1)
+s2D.1 <- slice2D(pp1,dd1,verbose=FALSE)
 ```
 
 ```{r plotslice}
 splom(s2D.1)
 ```
 
+```{r}
+system.time(mp4 <- glmer(total.fruits ~ nutrient*amd +
+             rack + status +
+             (amd*nutrient|gen),
+             data=dat.tf, family="poisson",
+                         control=glmerControl(optimizer=nloptwrap)))
